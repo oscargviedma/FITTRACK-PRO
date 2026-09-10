@@ -4,11 +4,11 @@ import {
   ChevronLeft, ChevronRight, Dumbbell, History as HistoryIcon, 
   Layers, Search, Flame, Sparkles, ArrowRight, CalendarCheck, 
   CalendarDays, Activity, Target, Trophy, ArrowRightLeft, TrendingUp,
-  Menu, Download, Info, DatabaseZap
+  Menu, Download, Info, DatabaseZap, User, Save
 } from 'lucide-react';
 
 const DAYS_OF_WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const MUSCLE_GROUPS = ['All', 'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Legs', 'Core'];
+const MUSCLE_GROUPS = ['All', 'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Legs', 'Core', 'Bodyweight'];
 
 const STANDARD_ROUTINES = [
   {
@@ -114,6 +114,33 @@ const FALLBACK_DB = [
   { id: 'f23', name: 'Push-up', muscle: 'chest', equipment: 'bodyweight', image: 'Push_Up/0.jpg' }
 ];
 
+const isExerciseBodyweight = (ex) => {
+  if (!ex) return false;
+  if (ex.equipment && ex.equipment.toLowerCase().includes('body')) return true;
+  const n = ex.name.toLowerCase();
+  const bwKeywords = ['pull-up', 'pull up', 'push-up', 'push up', 'drop push', 'dip', 'plank', 'chin-up', 'bodyweight', 'calf raise', 'sit-up', 'crunch', 'lunges'];
+  return bwKeywords.some(kw => n.includes(kw));
+};
+
+const playRestChime = () => {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 1.5);
+  } catch(e) {}
+};
+
 const formatSeconds = (totalSeconds) => {
   const mins = Math.floor(totalSeconds / 60);
   const secs = totalSeconds % 60;
@@ -165,12 +192,17 @@ const calculate1RM = (weight, reps) => {
   return weight * (1 + reps / 30);
 };
 
+const getSetVolume = (weight, reps, exercise, userProfile) => {
+  const w = isExerciseBodyweight(exercise) ? (Number(weight) + Number(userProfile?.weight || 75)) : Number(weight);
+  return w * Number(reps);
+};
+
 const getGlobalPreviousStats = (exerciseName, historyList) => {
   if (!exerciseName || !historyList) return null;
   for (const session of historyList) {
     const foundEx = session.exercises?.find(e => e.name === exerciseName);
     if (foundEx && foundEx.sets && foundEx.sets.length > 0) {
-      const workingSets = foundEx.sets.filter(s => !s.isWarmup);
+      const workingSets = foundEx.sets.filter(s => !s.isWarmup && !s.is1RM);
       if (workingSets.length > 0) return workingSets;
       return foundEx.sets;
     }
@@ -195,17 +227,17 @@ const ExerciseImage = ({ srcPath, alt, className, fallbackSize = 24, muscle }) =
 const TutorialOverlay = ({ onClose }) => {
   const [step, setStep] = useState(0);
   const steps = [
-    { title: "Welcome to FitTrack.PRO", desc: "Let's take a quick 4-step tour so you can maximize your gains and track efficiently.", icon: <Flame size={40} className="text-indigo-500" /> },
+    { title: "Welcome to FitTrack.PRO", desc: "Let's take a quick 5-step tour so you can maximize your gains. (Swipe left and right anywhere to navigate tabs!)", icon: <Flame size={40} className="text-indigo-500" /> },
     { title: "The Planner & Goals", desc: "Use the Planner on the Home Screen to schedule your workout days. Set a Weekly Goal to keep yourself accountable and watch the progress bar fill up as you train.", icon: <Target size={40} className="text-emerald-500" /> },
-    { title: "Smart Active Workouts", desc: "Inside a workout: Tap the 'Swap' icon if a machine is taken. Toggle 'Warm-up' to mark lighter sets (so they don't skew your stats), and use the circular Rest Timer between sets.", icon: <Activity size={40} className="text-amber-500" /> },
-    { title: "Library Shortcuts", desc: "In the Workout Library, you can Tap and Hold any routine to instantly peek at its exercises without starting it. Edit standard templates to make them your own.", icon: <Layers size={40} className="text-purple-500" /> },
-    { title: "Progress Analytics", desc: "Your 1-Rep Max (1RM) is automatically calculated from your heavy sets. Check the Progress Tab to watch your trendlines grow over time!", icon: <TrendingUp size={40} className="text-sky-500" /> }
+    { title: "Smart Active Workouts", desc: "Inside a workout: Tap the 'Swap' icon if a machine is taken. Toggle '1RM' to mark your heavy records, and use the background-safe circular Rest Timer.", icon: <Activity size={40} className="text-amber-500" /> },
+    { title: "Bodyweight Smarts", desc: "If you log a bodyweight exercise like Pull-ups, the app automatically factors in your body weight for total volume and accurate calorie calculations!", icon: <Dumbbell size={40} className="text-rose-500" /> },
+    { title: "Progress Analytics", desc: "Your 1-Rep Max (1RM), Max Reps, and muscle workloads are automatically calculated. Check the Progress Tab to watch your trendlines grow over time!", icon: <TrendingUp size={40} className="text-sky-500" /> }
   ];
 
   return (
     <div className="fixed inset-0 z-[200] bg-[#09090b]/95 backdrop-blur-md flex flex-col animate-in fade-in duration-300">
-      <div className="flex justify-end p-4 pt-safe w-full max-w-md mx-auto">
-        <button onClick={onClose} className="px-4 py-2 bg-zinc-900 rounded-full text-[10px] font-bold text-zinc-400 uppercase tracking-wider hover:text-white active:scale-95 transition-all">Skip</button>
+      <div className="flex justify-end p-4 pt-safe w-full max-w-md mx-auto relative">
+        <button onClick={onClose} className="absolute right-6 top-6 px-5 py-2.5 bg-zinc-900 rounded-full text-xs font-bold text-zinc-300 uppercase tracking-wider hover:bg-zinc-800 active:scale-95 transition-all z-50">Skip</button>
       </div>
       
       <div className="flex-1 flex flex-col items-center justify-center text-center px-6 pb-12 w-full max-w-sm mx-auto">
@@ -224,12 +256,96 @@ const TutorialOverlay = ({ onClose }) => {
         <div className="flex space-x-3 w-full">
           {step > 0 && <button onClick={() => setStep(s => s - 1)} className="flex-1 py-4 bg-zinc-900 text-white rounded-2xl font-bold active:scale-95 transition-transform">Back</button>}
           {step < steps.length - 1 ? (
-            <button onClick={() => setStep(s => s + 1)} className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition-transform">Next</button>
+            <button onClick={() => setStep(s => s + 1)} className="flex-[2] py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition-transform">Next</button>
           ) : (
             <button onClick={onClose} className="flex-[2] py-4 bg-white text-black rounded-2xl font-bold shadow-xl active:scale-95 transition-transform">Get Started</button>
           )}
         </div>
       </div>
+    </div>
+  );
+};
+
+const UserProfileModal = ({ isOpen, onSave }) => {
+  const [gender, setGender] = useState('Male');
+  const [age, setAge] = useState(25);
+  const [weight, setWeight] = useState(75);
+  const [height, setHeight] = useState(175);
+  const [autoProgression, setAutoProgression] = useState(true);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
+      <div className="bg-[#121214] border border-zinc-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl">
+         <div className="w-16 h-16 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto mb-4"><User size={32} /></div>
+         <h3 className="text-xl font-bold text-white mb-2 text-center">Your Profile</h3>
+         <p className="text-xs text-zinc-400 mb-6 text-center">We use this to calculate your calorie burn and track bodyweight exercises accurately.</p>
+         
+         <div className="space-y-4 mb-6">
+            <div className="flex space-x-3">
+              <div className="flex-1">
+                <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">Gender</label>
+                <select value={gender} onChange={(e) => setGender(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm text-white focus:outline-none">
+                  <option>Male</option><option>Female</option><option>Other</option>
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">Age</label>
+                <input type="number" value={age} onChange={(e) => setAge(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm text-white focus:outline-none" />
+              </div>
+            </div>
+            <div className="flex space-x-3">
+              <div className="flex-1">
+                <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">Weight (kg)</label>
+                <input type="number" value={weight} onChange={(e) => setWeight(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm text-white focus:outline-none" />
+              </div>
+              <div className="flex-1">
+                <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">Height (cm)</label>
+                <input type="number" value={height} onChange={(e) => setHeight(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm text-white focus:outline-none" />
+              </div>
+            </div>
+            <div className="pt-2">
+              <label className="flex items-center justify-between bg-zinc-900 border border-zinc-800 p-4 rounded-xl cursor-pointer">
+                <div>
+                  <span className="text-sm font-bold text-white block">Auto-Progression</span>
+                  <span className="text-[10px] text-zinc-500 mt-0.5 block">Smart progression suggestions</span>
+                </div>
+                <input type="checkbox" checked={autoProgression} onChange={(e) => setAutoProgression(e.target.checked)} className="w-5 h-5 accent-indigo-500" />
+              </label>
+            </div>
+         </div>
+         
+         <button onClick={() => onSave({ gender, age: Number(age), weight: Number(weight), height: Number(height), autoProgression })} className="w-full py-4 bg-white text-black font-bold rounded-xl active:scale-95 transition-transform">Save Profile</button>
+      </div>
+    </div>
+  );
+};
+
+const WorkoutRecapModal = ({ data, userProfile, historyLength, onDone }) => {
+  if (!data) return null;
+  
+  const volume = data.exercises.reduce((acc, ex) => acc + ex.sets.reduce((sAcc, s) => sAcc + getSetVolume(s.weight, s.reps, ex, userProfile), 0), 0);
+  const durationMins = Math.max(1, Math.round(data.duration / 60));
+  const userWeight = userProfile?.weight || 75;
+  const calories = Math.round((4.5 * 3.5 * userWeight / 200) * durationMins);
+  
+  return (
+    <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
+       <div className="bg-[#121214] border border-zinc-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 duration-300">
+         <div className="w-20 h-20 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-emerald-500/10"><Trophy size={40} /></div>
+         <h2 className="text-2xl font-black text-white mb-1 tracking-tight">Workout Complete!</h2>
+         <p className="text-sm font-medium text-zinc-400 mb-6">You crushed {data.routineName}</p>
+         
+         <div className="grid grid-cols-2 gap-3 mb-8">
+            <div className="bg-zinc-900 rounded-2xl p-4 border border-zinc-800 flex flex-col justify-center"><span className="block text-[10px] text-zinc-500 font-bold uppercase mb-1 tracking-wider">Volume</span><span className="text-xl font-black text-emerald-400">{volume.toLocaleString()} <span className="text-xs font-semibold">kg</span></span></div>
+            <div className="bg-zinc-900 rounded-2xl p-4 border border-zinc-800 flex flex-col justify-center"><span className="block text-[10px] text-zinc-500 font-bold uppercase mb-1 tracking-wider">Est. Calories</span><span className="text-xl font-black text-rose-400">{calories.toLocaleString()} <span className="text-xs font-semibold">kcal</span></span></div>
+            <div className="bg-zinc-900 rounded-2xl p-4 border border-zinc-800 flex flex-col justify-center"><span className="block text-[10px] text-zinc-500 font-bold uppercase mb-1 tracking-wider">Time</span><span className="text-xl font-black text-sky-400">{formatSeconds(data.duration)}</span></div>
+            <div className="bg-zinc-900 rounded-2xl p-4 border border-zinc-800 flex flex-col justify-center"><span className="block text-[10px] text-zinc-500 font-bold uppercase mb-1 tracking-wider">Routine Runs</span><span className="text-xl font-black text-indigo-400">#{historyLength + 1}</span></div>
+         </div>
+         
+         <button onClick={onDone} className="w-full py-4 bg-white text-black font-bold text-sm rounded-xl active:scale-95 transition-transform shadow-xl">Save to History</button>
+       </div>
     </div>
   );
 };
@@ -275,14 +391,19 @@ const WeeklyTracker = ({ history, onSelectDay }) => {
     
     const monday = new Date(today);
     monday.setDate(today.getDate() - diffToMonday);
-    
+    monday.setHours(0, 0, 0, 0);
+
     return DAYS_OF_WEEK.map((dayName, index) => {
       const targetDate = new Date(monday);
       targetDate.setDate(monday.getDate() + index);
-      const dateStr = getLocalYYYYMMDD(targetDate);
+      const dateStr = getLocalYYYYMMDD(targetDate.toISOString());
       
-      const loggedWorkouts = history.filter(h => getLocalYYYYMMDD(h.date) === dateStr);
-      const isToday = getLocalYYYYMMDD(new Date()) === dateStr;
+      const loggedWorkouts = history.filter(h => {
+        const itemDate = getLocalYYYYMMDD(h.date);
+        return itemDate === dateStr;
+      });
+
+      const isToday = getLocalYYYYMMDD(new Date().toISOString()) === dateStr;
 
       return { name: dayName, date: targetDate, dateStr, dayNum: targetDate.getDate(), workouts: loggedWorkouts, hasWorkout: loggedWorkouts.length > 0, isToday };
     });
@@ -312,36 +433,44 @@ const WeeklyTracker = ({ history, onSelectDay }) => {
   );
 };
 
-const DayDetailsModal = ({ dayData, onClose }) => {
+const DayDetailsModal = ({ dayData, onClose, onOpenWorkout }) => {
   if (!dayData) return null;
   return (
-    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-[#121214] border border-zinc-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h3 className="text-xl font-bold text-white">{dayData.date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</h3>
-            <p className="text-xs text-zinc-500 mt-1">{dayData.workouts.length} session(s) logged</p>
-          </div>
-          <button onClick={onClose} className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-white"><X size={18}/></button>
+    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex flex-col p-4 pt-12 animate-in slide-in-from-bottom-10 duration-300">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-2xl font-bold text-white tracking-tight">
+            {dayData.date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+          </h2>
+          <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider mt-1">
+            {dayData.workouts.length} session{dayData.workouts.length === 1 ? '' : 's'} logged
+          </p>
         </div>
-        {dayData.workouts.length === 0 ? (
-          <div className="py-8 text-center bg-[#09090b] rounded-2xl border border-dashed border-zinc-800">
-            <p className="text-zinc-500 text-sm font-medium">No sessions logged.</p>
-          </div>
-        ) : (
-          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-            {dayData.workouts.map((w, idx) => (
-              <div key={idx} className="bg-[#09090b] border border-zinc-800 p-4 rounded-2xl">
-                <h4 className="text-sm font-bold text-white">{w.routineName || 'Custom Workout'}</h4>
-                <div className="flex items-center space-x-3 mt-2 text-[11px] text-zinc-400 font-medium">
+        <button onClick={onClose} className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center hover:bg-zinc-800 transition-colors">
+          <X size={20} />
+        </button>
+      </div>
+
+      {dayData.workouts.length === 0 ? (
+        <div className="py-12 text-center bg-[#121214] rounded-3xl border border-dashed border-zinc-800">
+          <p className="text-zinc-500 text-sm font-bold">No sessions logged for this date.</p>
+        </div>
+      ) : (
+        <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+          {dayData.workouts.map((w, idx) => (
+            <div key={w.id || idx} onClick={() => { onOpenWorkout(w); onClose(); }} className="bg-[#121214] border border-zinc-800/80 p-5 rounded-2xl cursor-pointer hover:border-zinc-700 transition-all active:scale-95 flex items-center justify-between">
+              <div>
+                <h4 className="text-base font-bold text-white tracking-tight">{w.routineName || 'Custom Workout'}</h4>
+                <div className="flex items-center space-x-3 mt-1.5 text-xs text-zinc-400 font-medium">
                   <span className="flex items-center"><Clock size={12} className="mr-1 text-indigo-400" />{formatSeconds(w.duration)}</span>
                   <span className="flex items-center"><Dumbbell size={12} className="mr-1 text-emerald-400" />{w.exercises?.length || 0} exercises</span>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+              <ChevronRight size={18} className="text-zinc-600" />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -389,21 +518,23 @@ const WeeklyPlannerModal = ({ isOpen, onClose, scheduledRoutines, customRoutines
   }
 
   return (
-    <div className="fixed inset-0 z-[90] bg-[#09090b]/95 backdrop-blur-sm flex flex-col p-4 pt-12 animate-in slide-in-from-bottom-4 duration-300">
-      <div className="flex justify-between items-center mb-6 pt-safe">
-        <div><h2 className="text-2xl font-bold text-white tracking-tight">Weekly Planner</h2><p className="text-xs font-medium text-zinc-500 mt-1">Tap a day to assign a routine</p></div>
-        <button onClick={handleClose} className="px-4 py-2 bg-white text-black font-bold text-xs rounded-xl shadow-md active:scale-95">Done</button>
-      </div>
-      <div className="flex-1 overflow-y-auto space-y-3 pb-20">
-        {DAYS_OF_WEEK.map((day, idx) => {
-          const assigned = tempSchedule[idx];
-          return (
-            <button key={idx} onClick={() => setPickerDay(idx)} className={`w-full p-4 rounded-2xl border transition-all active:scale-95 flex items-center justify-between ${assigned && !assigned.isRest ? 'bg-indigo-600/10 border-indigo-500/30' : assigned?.isRest ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-[#121214] border-zinc-800'}`}>
-              <div className="text-left"><span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">{day}</span><span className={`text-base font-bold tracking-tight ${assigned && !assigned.isRest ? 'text-indigo-400' : assigned?.isRest ? 'text-emerald-400' : 'text-zinc-500'}`}>{assigned ? assigned.name : 'Empty Day'}</span></div>
-              <ChevronRight size={18} className={assigned ? 'text-zinc-400' : 'text-zinc-600'} />
-            </button>
-          );
-        })}
+    <div className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
+      <div className="bg-[#121214] border border-zinc-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[85vh]">
+        <div className="flex justify-between items-center mb-6">
+          <div><h2 className="text-xl font-bold text-white tracking-tight">Weekly Planner</h2><p className="text-xs font-medium text-zinc-500 mt-1">Tap a day to assign a routine</p></div>
+          <button onClick={handleClose} className="px-4 py-2 bg-white text-black font-bold text-xs rounded-xl shadow-md active:scale-95">Done</button>
+        </div>
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1 pb-4">
+          {DAYS_OF_WEEK.map((day, idx) => {
+            const assigned = tempSchedule[idx];
+            return (
+              <button key={idx} onClick={() => setPickerDay(idx)} className={`w-full p-4 rounded-2xl border transition-all active:scale-95 flex items-center justify-between ${assigned && !assigned.isRest ? 'bg-indigo-600/10 border-indigo-500/30' : assigned?.isRest ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-[#09090b] border-zinc-800'}`}>
+                <div className="text-left"><span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block mb-1">{day}</span><span className={`text-base font-bold tracking-tight ${assigned && !assigned.isRest ? 'text-indigo-400' : assigned?.isRest ? 'text-emerald-400' : 'text-zinc-500'}`}>{assigned ? assigned.name : 'Empty Day'}</span></div>
+                <ChevronRight size={18} className={assigned ? 'text-zinc-400' : 'text-zinc-600'} />
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -449,48 +580,119 @@ const GoalSettingModal = ({ isOpen, currentGoal, onClose, onSave }) => {
   );
 };
 
-const StatsView = ({ history }) => {
+const StatsView = ({ history, userProfile }) => {
+  const [statsMode, setStatsMode] = useState('1rm'); // '1rm' or 'muscle_strength'
   const [selectedExercise, setSelectedExercise] = useState('Barbell Bench Press');
+  const [selectedMuscleChart, setSelectedMuscleChart] = useState('Chest');
+  const [timeFilter, setTimeFilter] = useState('all_time'); // 'all_time' or 'last_30_days'
   
+  const filteredHistory = useMemo(() => {
+    if (timeFilter === 'all_time') return history;
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    return history.filter(h => new Date(h.date) >= thirtyDaysAgo);
+  }, [history, timeFilter]);
+
   const allLoggedExercises = useMemo(() => {
     const exSet = new Set();
     history.forEach(session => session.exercises?.forEach(ex => {
-      if (ex.sets && ex.sets.some(s => !s.isWarmup && s.weight > 0)) exSet.add(ex.name);
+      if (ex.sets && ex.sets.some(s => !s.isWarmup && s.weight !== undefined)) exSet.add(ex.name);
     }));
     return Array.from(exSet).sort();
   }, [history]);
 
   const chartData = useMemo(() => {
     const data = [];
-    const sortedHistory = [...history].reverse(); 
-    sortedHistory.forEach(session => {
-      const targetEx = session.exercises?.find(e => e.name === selectedExercise);
-      if (targetEx && targetEx.sets) {
-        const workingSets = targetEx.sets.filter(s => !s.isWarmup && s.weight > 0);
-        if (workingSets.length > 0) {
-          let best1RM = 0;
-          workingSets.forEach(s => {
-            const current1RM = calculate1RM(s.weight, s.reps);
-            if (current1RM > best1RM) best1RM = current1RM;
-          });
-          data.push({ date: getLocalYYYYMMDD(session.date).split('-').slice(1).join('/'), value: Math.round(best1RM) });
-        }
-      }
-    });
-    return data;
-  }, [history, selectedExercise]);
+    const sortedHistory = [...filteredHistory].reverse(); 
 
-  const totalWorkouts = history.length;
-  const totalVolume = history.reduce((acc, curr) => {
+    if (statsMode === '1rm') {
+      sortedHistory.forEach(session => {
+        const targetEx = session.exercises?.find(e => e.name === selectedExercise);
+        if (targetEx && targetEx.sets) {
+          const workingSets = targetEx.sets.filter(s => !s.isWarmup && s.weight !== undefined);
+          if (workingSets.length > 0) {
+            const isBw = isExerciseBodyweight(targetEx);
+            let bestValue = 0;
+            workingSets.forEach(s => {
+              if (isBw) {
+                if (s.reps > bestValue) bestValue = s.reps;
+              } else {
+                const w = Number(s.weight);
+                const current1RM = calculate1RM(w, s.reps);
+                if (current1RM > bestValue) bestValue = current1RM;
+              }
+            });
+            data.push({ date: getLocalYYYYMMDD(session.date).split('-').slice(1).join('/'), value: isBw ? bestValue : Math.round(bestValue), isBw });
+          }
+        }
+      });
+    } else {
+      sortedHistory.forEach(session => {
+        let totalStrength = 0;
+        let exCount = 0;
+        session.exercises?.forEach(ex => {
+          if (normalizeMuscle(ex.muscle || ex.primaryMuscles?.[0]) === selectedMuscleChart.toLowerCase()) {
+            let best1RM = 0;
+            ex.sets?.forEach(s => {
+              if (!s.isWarmup && s.weight !== undefined) {
+                const w = isExerciseBodyweight(ex) ? (Number(s.weight) + Number(userProfile?.weight || 75)) : Number(s.weight);
+                const current1RM = calculate1RM(w, s.reps);
+                if (current1RM > best1RM) best1RM = current1RM;
+              }
+            });
+            if (best1RM > 0) {
+              totalStrength += best1RM;
+              exCount += 1;
+            }
+          }
+        });
+        if (exCount > 0) {
+          data.push({ date: getLocalYYYYMMDD(session.date).split('-').slice(1).join('/'), value: Math.round(totalStrength / exCount) });
+        }
+      });
+    }
+    return data;
+  }, [filteredHistory, selectedExercise, statsMode, selectedMuscleChart, userProfile]);
+
+  const totalWorkouts = filteredHistory.length;
+  const totalVolume = filteredHistory.reduce((acc, curr) => {
     let sessionVol = 0;
-    curr.exercises?.forEach(ex => ex.sets?.forEach(s => sessionVol += (s.weight || 0) * (s.reps || 0)));
+    curr.exercises?.forEach(ex => ex.sets?.forEach(s => {
+      if(s.weight !== undefined) sessionVol += getSetVolume(s.weight, s.reps, ex, userProfile);
+    }));
     return acc + sessionVol;
   }, 0);
 
-  const averageVolume = totalWorkouts > 0 ? Math.round(totalVolume / totalWorkouts) : 0;
+  // Analytics Math
+  let totalSetsForRPE = 0;
+  let sumRPE = 0;
+  let totalDurationSecs = 0;
+
+  filteredHistory.forEach(session => {
+      totalDurationSecs += (session.duration || 0);
+      session.exercises?.forEach(ex => {
+          ex.sets?.forEach(s => {
+              if (s.difficulty) { sumRPE += Number(s.difficulty); totalSetsForRPE += 1; }
+          });
+      });
+  });
+
+  const averageRPE = totalSetsForRPE > 0 ? (sumRPE / totalSetsForRPE).toFixed(1) : 0;
+  const avgDurationMins = totalWorkouts > 0 ? (totalDurationSecs / totalWorkouts) / 60 : 0;
+  const avgCalories = avgDurationMins > 0 ? Math.round((4.5 * 3.5 * (userProfile?.weight || 75) / 200) * avgDurationMins) : 0;
+
+  const isBwChart = statsMode === '1rm' && chartData.length > 0 && chartData[0].isBw;
+  const unitText = isBwChart ? 'reps' : 'kg';
+  const metricText = statsMode === '1rm' ? (isBwChart ? 'Current Max Reps' : 'Current Est. 1RM') : 'Muscle Strength Score';
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300 pb-20">
+      
+      <div className="flex space-x-2 bg-[#121214] p-1.5 rounded-xl border border-zinc-800/80 shadow-sm">
+        <button onClick={() => setTimeFilter('all_time')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${timeFilter === 'all_time' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-white'}`}>All-Time</button>
+        <button onClick={() => setTimeFilter('last_30_days')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${timeFilter === 'last_30_days' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-white'}`}>Last 30 Days</button>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 mb-2">
         <div className="bg-[#121214] p-4 rounded-2xl border border-zinc-800/80 shadow-sm flex flex-col justify-center text-center">
           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">Total Volume Lifted</span>
@@ -502,65 +704,112 @@ const StatsView = ({ history }) => {
         </div>
       </div>
       
-      <div className="bg-[#121214] p-4 rounded-2xl border border-zinc-800/80 shadow-sm flex flex-col justify-center items-center">
-         <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">Avg. Volume Per Session</span>
-         <span className="text-lg font-black text-white">{averageVolume.toLocaleString()} <span className="text-xs text-zinc-500">kg</span></span>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-[#121214] p-4 rounded-2xl border border-zinc-800/80 shadow-sm flex flex-col justify-center items-center text-center">
+           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">Avg Energy Burned</span>
+           <span className="text-lg font-black text-rose-400">{avgCalories.toLocaleString()} <span className="text-[10px] text-zinc-500">kcal</span></span>
+        </div>
+        <div className="bg-[#121214] p-4 rounded-2xl border border-zinc-800/80 shadow-sm flex flex-col justify-center items-center text-center">
+           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">Avg Effort (RPE)</span>
+           <span className="text-lg font-black text-amber-400">{averageRPE} <span className="text-[10px] text-zinc-500">/ 10</span></span>
+        </div>
+      </div>
+
+      <div className="flex space-x-2 bg-[#121214] p-1.5 rounded-xl border border-zinc-800/80 shadow-sm mt-4">
+        <button onClick={() => setStatsMode('1rm')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${statsMode === '1rm' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-white'}`}>1RM / Max Reps</button>
+        <button onClick={() => setStatsMode('muscle_strength')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${statsMode === 'muscle_strength' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-white'}`}>Muscle Strength</button>
       </div>
 
       <div className="bg-[#121214] border border-zinc-800/80 p-4 rounded-2xl shadow-sm">
-        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-2">1-Rep Max Tracker</span>
-        <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:border-indigo-500 appearance-none">
-          {allLoggedExercises.length > 0 ? allLoggedExercises.map(ex => <option key={ex} value={ex}>{ex}</option>) : <option>No Data Available</option>}
-        </select>
+        {statsMode === '1rm' ? (
+          <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:border-indigo-500 appearance-none">
+            {allLoggedExercises.length > 0 ? allLoggedExercises.map(ex => <option key={ex} value={ex}>{ex}</option>) : <option>No Data Available</option>}
+          </select>
+        ) : (
+          <select value={selectedMuscleChart} onChange={(e) => setSelectedMuscleChart(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:border-indigo-500 appearance-none">
+            {MUSCLE_GROUPS.filter(m => m !== 'All' && m !== 'Bodyweight').map(m => <option key={m} value={m}>{m} Strength Trend</option>)}
+          </select>
+        )}
       </div>
 
-      {allLoggedExercises.length === 0 ? (
+      {(statsMode === '1rm' && allLoggedExercises.length === 0) || chartData.length === 0 ? (
         <div className="flex flex-col items-center justify-center text-center py-10 bg-[#121214] rounded-2xl border border-dashed border-zinc-800">
           <TrendingUp size={32} className="text-zinc-600 mb-4" />
-          <h3 className="text-sm font-bold text-white mb-2">No 1RM Data Yet</h3>
+          <h3 className="text-sm font-bold text-white mb-2">No Data Yet</h3>
           <p className="text-xs text-zinc-500">Log some working sets to generate progress charts.</p>
         </div>
       ) : (
         <div className="bg-[#121214] border border-zinc-800/80 p-5 rounded-2xl shadow-sm">
           <div className="flex justify-between items-end mb-6">
             <div>
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Current Est. 1RM</span>
-              <span className="text-3xl font-black text-white">{chartData.length > 0 ? chartData[chartData.length - 1].value : 0} <span className="text-sm text-zinc-500 font-semibold">kg</span></span>
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
+                {metricText}
+              </span>
+              <span className="text-3xl font-black text-white">{chartData.length > 0 ? chartData[chartData.length - 1].value.toLocaleString() : 0} <span className="text-sm text-zinc-500 font-semibold">{unitText}</span></span>
             </div>
             {chartData.length > 1 && (
               <div className={`flex items-center space-x-1 text-xs font-bold px-2 py-1 rounded-md ${chartData[chartData.length - 1].value >= chartData[0].value ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'}`}>
-                <span>{chartData[chartData.length - 1].value >= chartData[0].value ? '+' : ''}{chartData[chartData.length - 1].value - chartData[0].value} kg</span>
+                <span>{chartData[chartData.length - 1].value >= chartData[0].value ? '+' : ''}{(chartData[chartData.length - 1].value - chartData[0].value).toLocaleString()} {unitText}</span>
               </div>
             )}
           </div>
 
           {chartData.length < 2 ? (
             <div className="h-48 flex items-center justify-center border border-dashed border-zinc-800 rounded-xl">
-              <span className="text-xs text-zinc-500 font-medium">Log this exercise again to generate a trendline.</span>
+              <span className="text-xs text-zinc-500 font-medium">Log this again to generate a trendline.</span>
             </div>
           ) : (
-            <div className="relative h-48 w-full mt-4">
-              <svg viewBox="0 -10 100 120" className="w-full h-full overflow-visible" preserveAspectRatio="none">
-                <line x1="0" y1="0" x2="100" y2="0" stroke="#27272a" strokeWidth="0.5" strokeDasharray="2 2" />
-                <line x1="0" y1="50" x2="100" y2="50" stroke="#27272a" strokeWidth="0.5" strokeDasharray="2 2" />
-                <line x1="0" y1="100" x2="100" y2="100" stroke="#27272a" strokeWidth="0.5" strokeDasharray="2 2" />
+            <div className="relative h-56 w-full mt-4">
+              <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
                 {(() => {
-                  const max = Math.max(...chartData.map(d => d.value));
-                  const min = Math.max(0, Math.min(...chartData.map(d => d.value)) * 0.8);
-                  const range = max - min || 1;
-                  const points = chartData.map((d, i) => `${(i / (chartData.length - 1)) * 100},${100 - ((d.value - min) / range) * 100}`).join(' ');
+                  const maxVal = Math.max(...chartData.map(d => d.value));
+                  const minVal = Math.max(0, Math.min(...chartData.map(d => d.value)) * 0.8);
+                  const range = maxVal - minVal || 1;
+                  
+                  // Map X from 12 to 100 to leave room for Y labels
+                  const mapX = (i, len) => 12 + (i / (len - 1)) * 88;
+                  const mapY = (val) => 85 - ((val - minVal) / range) * 75;
+
+                  const points = chartData.map((d, i) => `${mapX(i, chartData.length)},${mapY(d.value)}`).join(' ');
+
+                  const midVal = Math.round((maxVal + minVal) / 2);
+                  const displayMax = Math.round(maxVal);
+                  const displayMin = Math.round(minVal);
+
                   return (
                     <>
-                      <defs><linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" /><stop offset="100%" stopColor="#6366f1" stopOpacity="0" /></linearGradient></defs>
-                      <polygon points={`0,100 ${points} 100,100`} fill="url(#chartGradient)" />
-                      <polyline points={points} fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                      {chartData.map((d, i) => <circle key={i} cx={(i / (chartData.length - 1)) * 100} cy={100 - ((d.value - min) / range) * 100} r="3" fill="#09090b" stroke="#6366f1" strokeWidth="1.5" />)}
+                      {/* Grid Lines */}
+                      <line x1="12" y1="10" x2="100" y2="10" stroke="#27272a" strokeWidth="0.5" strokeDasharray="2 2" />
+                      <line x1="12" y1="47.5" x2="100" y2="47.5" stroke="#27272a" strokeWidth="0.5" strokeDasharray="2 2" />
+                      <line x1="12" y1="85" x2="100" y2="85" stroke="#27272a" strokeWidth="0.5" strokeDasharray="2 2" />
+                      
+                      {/* Y-Axis Labels */}
+                      <text x="0" y="12" fill="#71717a" fontSize="7" fontWeight="bold">{displayMax}</text>
+                      <text x="0" y="49.5" fill="#71717a" fontSize="7" fontWeight="bold">{midVal}</text>
+                      <text x="0" y="87" fill="#71717a" fontSize="7" fontWeight="bold">{displayMin}</text>
+
+                      {/* Line & Gradient */}
+                      <defs>
+                        <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
+                          <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      <polygon points={`12,85 ${points} 100,85`} fill="url(#chartGradient)" />
+                      <polyline points={points} fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      
+                      {/* Data Points */}
+                      {chartData.map((d, i) => (
+                        <circle key={i} cx={mapX(i, chartData.length)} cy={mapY(d.value)} r="1.5" fill="#09090b" stroke="#6366f1" strokeWidth="1" />
+                      ))}
                     </>
                   );
                 })()}
               </svg>
-              <div className="flex justify-between w-full mt-2 px-1 text-[10px] font-bold text-zinc-500">
-                <span>{chartData[0].date}</span><span>{chartData[chartData.length - 1].date}</span>
+              <div className="flex justify-between w-full mt-2 pl-3 text-[10px] font-bold text-zinc-500">
+                <span>{chartData[0].date}</span>
+                {chartData.length > 2 && <span>{chartData[Math.floor(chartData.length / 2)].date}</span>}
+                <span>{chartData[chartData.length - 1].date}</span>
               </div>
             </div>
           )}
@@ -570,7 +819,7 @@ const StatsView = ({ history }) => {
   );
 };
 
-const HistoryCalendarView = ({ history, onDeleteSession }) => {
+const HistoryCalendarView = ({ history, onDeleteSession, userProfile, weeklyGoal, scheduledRoutines, onSaveAsRoutine }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedWorkout, setSelectedWorkout] = useState(null);
 
@@ -586,25 +835,82 @@ const HistoryCalendarView = ({ history, onDeleteSession }) => {
     const days = [];
     for (let i = 0; i < firstDay; i++) days.push(null);
     for (let i = 1; i <= daysInMonth; i++) {
-      const dateStr = getLocalYYYYMMDD(new Date(year, month, i));
-      const workouts = history.filter(h => getLocalYYYYMMDD(h.date) === dateStr);
+      const targetDate = new Date(year, month, i);
+      const dateStr = getLocalYYYYMMDD(targetDate);
+      const workouts = history.filter(h => getLocalYYYYMMDD(new Date(h.date)) === dateStr);
       days.push({ day: i, dateStr, workouts, hasWorkout: workouts.length > 0 });
     }
     return days;
   }, [currentDate, history]);
+
+  // Comprehensive Streak Calculator (evaluates History + Scheduled Rest Days)
+  const { longestStreak } = useMemo(() => {
+    const datesWithWorkouts = new Set(history.map(h => getLocalYYYYMMDD(new Date(h.date))));
+    const restDaysOfWeek = Object.keys(scheduledRoutines).filter(k => scheduledRoutines[k].isRest).map(Number);
+    
+    const isStreakDay = (d) => {
+       const dateStr = getLocalYYYYMMDD(d);
+       if (datesWithWorkouts.has(dateStr)) return true;
+       const myDayOfWeek = (d.getDay() + 6) % 7;
+       if (restDaysOfWeek.includes(myDayOfWeek)) return true;
+       return false;
+    };
+
+    let longest = 0;
+    if (history.length > 0) {
+        let tempLongest = 0;
+        let tempCurrent = 0;
+        const sortedDates = [...history].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const startDate = new Date(sortedDates[0].date);
+        startDate.setHours(0,0,0,0);
+        const endDate = new Date();
+        endDate.setHours(0,0,0,0);
+        
+        let iterDate = new Date(startDate);
+        while(iterDate <= endDate) {
+            if (isStreakDay(iterDate)) {
+                tempCurrent++;
+                if (tempCurrent > tempLongest) tempLongest = tempCurrent;
+            } else {
+                tempCurrent = 0;
+            }
+            iterDate.setDate(iterDate.getDate() + 1);
+        }
+        longest = tempLongest;
+    }
+    return { longestStreak: longest };
+  }, [history, scheduledRoutines]);
+
+  const weeksMet = useMemo(() => {
+    if (!weeklyGoal) return 0;
+    const weeks = {};
+    history.forEach(h => {
+      const d = new Date(h.date);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1); 
+      const monday = new Date(d.setDate(diff));
+      const weekKey = getLocalYYYYMMDD(monday);
+      if(!weeks[weekKey]) weeks[weekKey] = new Set();
+      weeks[weekKey].add(getLocalYYYYMMDD(new Date(h.date)));
+    });
+    return Object.values(weeks).filter(daysSet => daysSet.size >= weeklyGoal).length;
+  }, [history, weeklyGoal]);
 
   if (selectedWorkout) {
     return (
       <div className="flex flex-col h-full animate-in slide-in-from-right-4 duration-300 pb-20">
         <button onClick={() => setSelectedWorkout(null)} className="flex items-center text-xs font-bold text-indigo-400 mb-4 bg-indigo-500/10 px-3 py-1.5 rounded-lg w-fit"><ChevronLeft size={16} className="mr-1" /> Back to Calendar</button>
         <div className="bg-[#121214] border border-zinc-800/80 p-5 rounded-2xl mb-4 shadow-sm flex-shrink-0 relative">
-          <button onClick={() => { onDeleteSession(selectedWorkout.id); setSelectedWorkout(null); }} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center hover:bg-rose-500/20 transition-colors"><Trash2 size={14}/></button>
-          <h4 className="text-lg font-bold text-white tracking-tight pr-8">{selectedWorkout.routineName}</h4>
+          <div className="absolute top-4 right-4 flex space-x-2">
+            <button onClick={() => onSaveAsRoutine(selectedWorkout)} className="w-8 h-8 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center hover:bg-indigo-500/20 transition-colors" title="Save to Library"><Layers size={14}/></button>
+            <button onClick={() => { onDeleteSession(selectedWorkout.id); setSelectedWorkout(null); }} className="w-8 h-8 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center hover:bg-rose-500/20 transition-colors" title="Delete"><Trash2 size={14}/></button>
+          </div>
+          <h4 className="text-lg font-bold text-white tracking-tight pr-20">{selectedWorkout.routineName}</h4>
           <p className="text-xs font-medium text-zinc-500 mt-1">{new Date(selectedWorkout.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })}</p>
           <div className="grid grid-cols-3 gap-3 mt-5 pt-4 border-t border-zinc-800/80 text-center">
             <div><span className="text-[10px] text-zinc-500 uppercase font-bold block mb-1">Duration</span><span className="text-sm font-mono font-bold text-indigo-400">{formatSeconds(selectedWorkout.duration)}</span></div>
             <div><span className="text-[10px] text-zinc-500 uppercase font-bold block mb-1">Rest Time</span><span className="text-sm font-mono font-bold text-amber-400">{formatSeconds(selectedWorkout.totalRestDuration || 0)}</span></div>
-            <div><span className="text-[10px] text-zinc-500 uppercase font-bold block mb-1">Volume</span><span className="text-sm font-mono font-bold text-emerald-400">{selectedWorkout.exercises.reduce((total, ex) => total + (ex.sets?.reduce((sTot, s) => sTot + (Number(s.weight) || 0) * (Number(s.reps) || 0), 0) || 0), 0)} kg</span></div>
+            <div><span className="text-[10px] text-zinc-500 uppercase font-bold block mb-1">Volume</span><span className="text-sm font-mono font-bold text-emerald-400">{selectedWorkout.exercises.reduce((total, ex) => total + (ex.sets?.reduce((sTot, s) => sTot + getSetVolume(s.weight, s.reps, ex, userProfile), 0) || 0), 0).toLocaleString()} kg</span></div>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3">
@@ -617,7 +923,9 @@ const HistoryCalendarView = ({ history, onDeleteSession }) => {
               <div className="space-y-1.5">
                 {ex.sets?.map((s, sIdx) => (
                   <div key={sIdx} className="flex justify-between text-[11px] py-1.5 px-3 rounded-lg bg-zinc-900/80 font-mono font-medium">
-                    <span className={s.isWarmup ? 'text-amber-500' : 'text-zinc-500'}>{s.isWarmup ? 'W' : `Set ${sIdx + 1}`}</span>
+                    <span className={`font-mono text-xs ${s.is1RM ? 'text-fuchsia-400 font-bold' : s.isWarmup ? 'text-amber-500 font-bold' : 'text-zinc-500'}`}>
+                      {s.is1RM ? '👑' : s.isWarmup ? 'W' : `Set ${sIdx + 1}`}
+                    </span>
                     <span className="text-white font-bold">{s.weight} kg × {s.reps} reps</span>
                     <span className="text-zinc-500">Diff: {s.difficulty}/10</span>
                   </div>
@@ -660,12 +968,31 @@ const HistoryCalendarView = ({ history, onDeleteSession }) => {
             </div>
           ))}
         </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-4">
+          {weeklyGoal > 0 && (
+            <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl flex flex-col justify-center items-center shadow-sm text-center">
+              <div className="flex items-center space-x-1.5 mb-1">
+                <Trophy size={14} className="text-indigo-400" />
+                <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Weekly Goals Met</span>
+              </div>
+              <span className="text-lg font-black text-indigo-400">{weeksMet}</span>
+            </div>
+          )}
+          <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded-xl flex flex-col justify-center items-center shadow-sm text-center">
+            <div className="flex items-center space-x-1.5 mb-1">
+              <Flame size={14} className="text-orange-400" />
+              <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">Longest Streak</span>
+            </div>
+            <span className="text-lg font-black text-orange-400">{longestStreak} Days</span>
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
-const ProgressMainTab = ({ history, onDeleteSession }) => {
+const ProgressMainTab = ({ history, userProfile, onDeleteSession, weeklyGoal, scheduledRoutines, onSaveAsRoutine }) => {
   const [view, setView] = useState('stats'); 
   return (
     <div className="flex flex-col h-full p-4 overflow-y-auto">
@@ -676,7 +1003,7 @@ const ProgressMainTab = ({ history, onDeleteSession }) => {
         <button onClick={() => setView('stats')} className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-colors ${view === 'stats' ? 'bg-indigo-600 text-white shadow' : 'text-zinc-500 hover:text-white'}`}>Progress & Stats</button>
         <button onClick={() => setView('history')} className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-colors ${view === 'history' ? 'bg-indigo-600 text-white shadow' : 'text-zinc-500 hover:text-white'}`}>Workout History</button>
       </div>
-      {view === 'stats' ? <StatsView history={history} /> : <HistoryCalendarView history={history} onDeleteSession={onDeleteSession} />}
+      {view === 'stats' ? <StatsView history={history} userProfile={userProfile} /> : <HistoryCalendarView history={history} userProfile={userProfile} weeklyGoal={weeklyGoal} scheduledRoutines={scheduledRoutines} onDeleteSession={onDeleteSession} onSaveAsRoutine={onSaveAsRoutine} />}
     </div>
   );
 };
@@ -806,7 +1133,9 @@ const ExerciseSelectorModal = ({ isOpen, onClose, exerciseDB, onSelectExercise, 
 
   const filteredExercises = useMemo(() => {
     let list = exerciseDB;
-    if (selectedMuscle !== 'All') {
+    if (selectedMuscle === 'Bodyweight') {
+      list = list.filter(item => isExerciseBodyweight(item));
+    } else if (selectedMuscle !== 'All') {
       const normSelected = selectedMuscle.toLowerCase();
       list = list.filter(item => {
         const itemMuscle = normalizeMuscle(item.muscle || (item.primaryMuscles && item.primaryMuscles[0]));
@@ -871,15 +1200,18 @@ const ExerciseSelectorModal = ({ isOpen, onClose, exerciseDB, onSelectExercise, 
   );
 };
 
-const ActiveWorkout = ({ session, history, onFinishWorkout, onCancelWorkout, exerciseDB }) => {
+const ActiveWorkout = ({ session, history, userProfile, onFinishWorkout, onCancelWorkout, exerciseDB }) => {
   const [exercises, setExercises] = useState(session.exercises || []);
   const [currentExIndex, setCurrentExIndex] = useState(0);
 
   const [totalSeconds, setTotalSeconds] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [exerciseSeconds, setExerciseSeconds] = useState(0);
+  
+  // Background-safe rest timer logic
   const [isResting, setIsResting] = useState(false);
-  const [restSeconds, setRestSeconds] = useState(0);
+  const [restEndTime, setRestEndTime] = useState(null);
+  const [restRemaining, setRestRemaining] = useState(0);
   const [restTarget, setRestTarget] = useState(90);
   const [totalRestDuration, setTotalRestDuration] = useState(0);
 
@@ -887,6 +1219,7 @@ const ActiveWorkout = ({ session, history, onFinishWorkout, onCancelWorkout, exe
   const [reps, setReps] = useState('');
   const [difficulty, setDifficulty] = useState('8');
   const [isWarmup, setIsWarmup] = useState(false);
+  const [is1RM, setIs1RM] = useState(false); // New 1RM / Max Reps toggle
   
   const [isAddExModalOpen, setIsAddExModalOpen] = useState(false);
   const [isSwapExModalOpen, setIsSwapExModalOpen] = useState(false);
@@ -895,6 +1228,7 @@ const ActiveWorkout = ({ session, history, onFinishWorkout, onCancelWorkout, exe
   const [hasModifications, setHasModifications] = useState(false);
 
   const currentExercise = exercises[currentExIndex];
+  const isBodyweight = isExerciseBodyweight(currentExercise);
   
   const prevExerciseStats = useMemo(() => {
     if (!currentExercise) return null;
@@ -904,6 +1238,9 @@ const ActiveWorkout = ({ session, history, onFinishWorkout, onCancelWorkout, exe
   const currentSetNum = (currentExercise?.sets?.length || 0) + 1;
   const prevSetData = prevExerciseStats?.[currentSetNum - 1];
 
+  const toggleWarmup = () => { setIsWarmup(!isWarmup); if (!isWarmup) setIs1RM(false); };
+  const toggle1RM = () => { setIs1RM(!is1RM); if (!is1RM) setIsWarmup(false); };
+
   useEffect(() => {
     if (!currentExercise) return;
     if (currentExercise.sets && currentExercise.sets.length > 0) {
@@ -911,42 +1248,71 @@ const ActiveWorkout = ({ session, history, onFinishWorkout, onCancelWorkout, exe
       setWeight(lastSet.weight.toString());
       setReps(lastSet.reps.toString());
       setDifficulty(lastSet.difficulty.toString());
-      setIsWarmup(false);
     } else if (prevSetData) {
-      setWeight(prevSetData.weight.toString());
-      setReps(prevSetData.reps.toString());
+      let prevW = parseFloat(prevSetData.weight) || 0;
+      let prevR = parseInt(prevSetData.reps) || 0;
+      
+      // Smart Auto Progression incorporating Reps & Weight
+      if (userProfile?.autoProgression && prevSetData.difficulty < 9) {
+        if (prevR < 10) prevR += 1;
+        else prevW += currentExercise?.equipment === 'machine' ? 5 : 2.5;
+      }
+      setWeight(prevW.toString());
+      setReps(prevR.toString());
       setDifficulty(prevSetData.difficulty.toString());
-      setIsWarmup(false);
     } else {
-      setWeight('');
+      setWeight(isBodyweight ? '0' : ''); // Auto-fill 0 for bodyweight
       setReps('');
       setDifficulty('8');
-      setIsWarmup(false);
     }
+    
+    setIsWarmup(false);
+    setIs1RM(false);
     setExerciseSeconds(0);
-  }, [currentExIndex, exercises.length]);
+  }, [currentExIndex, exercises.length, currentExercise, prevSetData, userProfile, isBodyweight]);
 
+  // Main Session Timer
   useEffect(() => {
     let interval = null;
     if (!isPaused) {
       interval = setInterval(() => {
         setTotalSeconds(s => s + 1);
         if (!isResting) setExerciseSeconds(es => es + 1);
-        else { setRestSeconds(rs => rs + 1); setTotalRestDuration(tr => tr + 1); }
+        else setTotalRestDuration(tr => tr + 1);
       }, 1000);
     }
     return () => clearInterval(interval);
   }, [isPaused, isResting]);
 
+  // Background-Safe Rest Timer with Audio Chime
+  useEffect(() => {
+    let interval = null;
+    if (isResting && restEndTime) {
+      interval = setInterval(() => {
+        const remaining = Math.max(0, Math.ceil((restEndTime - Date.now()) / 1000));
+        setRestRemaining(remaining);
+        if (remaining === 0) {
+          playRestChime();
+          setIsResting(false);
+        }
+      }, 500);
+    }
+    return () => clearInterval(interval);
+  }, [isResting, restEndTime]);
+
   const handleLogSetAndRest = () => {
     const w = weight === '' ? 0 : parseFloat(weight);
     if (reps === '' || !currentExercise) return;
     
-    const newSet = { weight: w, reps: parseInt(reps, 10), difficulty: parseInt(difficulty, 10), isWarmup, timestamp: Date.now() };
+    const newSet = { weight: w, reps: parseInt(reps, 10), difficulty: parseInt(difficulty, 10), isWarmup, is1RM, timestamp: Date.now() };
     const updatedExercises = exercises.map((ex, idx) => idx === currentExIndex ? { ...ex, sets: [...(ex.sets || []), newSet] } : ex);
     setExercises(updatedExercises);
+    
+    setRestEndTime(Date.now() + restTarget * 1000);
+    setRestRemaining(restTarget);
     setIsResting(true);
-    setRestSeconds(0);
+    setIsWarmup(false); // Turn off after logging
+    setIs1RM(false);
   };
 
   const handleAddExerciseFromModal = (ex) => {
@@ -985,8 +1351,8 @@ const ActiveWorkout = ({ session, history, onFinishWorkout, onCancelWorkout, exe
             <h3 className="text-xl font-bold text-white mb-2">Are you sure?</h3>
             <p className="text-sm text-zinc-400 mb-6">There {unfinishedCount === 1 ? 'is' : 'are'} still <span className="text-white font-bold">{unfinishedCount}</span> exercise{unfinishedCount === 1 ? '' : 's'} left. You can do it!</p>
             <div className="flex flex-col space-y-3">
-              <button onClick={() => setIsEarlyFinishModalOpen(false)} className="w-full py-3.5 rounded-xl bg-indigo-600 text-white font-bold text-sm">No, keep going</button>
-              <button onClick={() => { setIsEarlyFinishModalOpen(false); executeFinish(); }} className="w-full py-3.5 rounded-xl bg-zinc-900 text-zinc-400 font-bold text-sm border border-zinc-800">Yes, finish session</button>
+              <button onClick={() => setIsEarlyFinishModalOpen(false)} className="w-full py-3.5 rounded-xl bg-indigo-600 text-white font-bold text-sm active:scale-95 transition-transform">No, keep going</button>
+              <button onClick={() => { setIsEarlyFinishModalOpen(false); executeFinish(); }} className="w-full py-3.5 rounded-xl bg-zinc-900 text-zinc-400 font-bold text-sm border border-zinc-800 active:scale-95 transition-transform">Yes, finish session</button>
             </div>
           </div>
         </div>
@@ -1004,7 +1370,7 @@ const ActiveWorkout = ({ session, history, onFinishWorkout, onCancelWorkout, exe
         </div>
         <div className="flex items-center space-x-2">
           <button onClick={onCancelWorkout} className="px-4 py-2 rounded-lg bg-zinc-900 text-zinc-400 text-xs font-bold transition-colors hover:text-white flex items-center justify-center">Cancel</button>
-          <button onClick={handleTryFinish} className="px-5 py-2 rounded-lg bg-white text-black text-xs font-bold active:scale-95 transition-all flex items-center justify-center">Finish</button>
+          <button onClick={handleTryFinish} className="px-5 py-2 rounded-lg bg-white text-black text-xs font-bold active:scale-95 transition-all flex items-center justify-center shadow-lg">Finish</button>
         </div>
       </div>
 
@@ -1064,11 +1430,13 @@ const ActiveWorkout = ({ session, history, onFinishWorkout, onCancelWorkout, exe
             {currentExercise.sets && currentExercise.sets.length > 0 && (
               <div className="bg-[#121214] border border-zinc-800/80 rounded-xl overflow-hidden shadow-sm">
                 <div className="grid grid-cols-4 text-[10px] font-bold text-zinc-500 uppercase px-4 py-3 bg-zinc-900 border-b border-zinc-800">
-                  <span>Set</span><span className="text-center">Weight</span><span className="text-center">Reps</span><span className="text-right">Diff</span>
+                  <span>Set</span><span className="text-center">{isBodyweight ? '+Weight' : 'Weight'}</span><span className="text-center">Reps</span><span className="text-right">Diff</span>
                 </div>
                 {currentExercise.sets.map((s, idx) => (
                   <div key={idx} className="grid grid-cols-4 items-center px-4 py-3 text-sm font-semibold border-b border-zinc-800/50 last:border-0">
-                    <span className={`font-mono text-xs ${s.isWarmup ? 'text-amber-500 font-bold' : 'text-zinc-500'}`}>{s.isWarmup ? 'W' : `#${idx + 1}`}</span>
+                    <span className={`font-mono text-xs ${s.is1RM ? 'text-fuchsia-400 font-bold' : s.isWarmup ? 'text-amber-500 font-bold' : 'text-zinc-500'}`}>
+                      {s.is1RM ? '👑' : s.isWarmup ? 'W' : `#${idx + 1}`}
+                    </span>
                     <span className="text-center text-white">{s.weight} kg</span>
                     <span className="text-center text-white">{s.reps}</span>
                     <span className="text-right text-zinc-500">{s.difficulty}</span>
@@ -1079,8 +1447,8 @@ const ActiveWorkout = ({ session, history, onFinishWorkout, onCancelWorkout, exe
           </div>
 
           <div className="p-4 bg-[#09090b] border-t border-zinc-900 z-10 sticky bottom-0">
-            {isResting ? (
-              <div className="bg-[#121214] border border-zinc-800/80 rounded-2xl p-5 flex flex-col items-center justify-center shadow-sm animate-in fade-in zoom-in-95 duration-200 text-center">
+            {isResting && (
+              <div className="bg-[#121214] border border-zinc-800/80 rounded-2xl p-5 flex flex-col items-center justify-center shadow-sm animate-in fade-in zoom-in-95 duration-200 text-center mb-4">
                 <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block mb-4">Rest & Recover</span>
                 
                 <div className="relative w-32 h-32 flex items-center justify-center mb-6">
@@ -1092,65 +1460,82 @@ const ActiveWorkout = ({ session, history, onFinishWorkout, onCancelWorkout, exe
                       strokeWidth="8" 
                       fill="transparent" 
                       strokeDasharray={351.8} 
-                      strokeDashoffset={351.8 - (Math.min(100, (restSeconds / restTarget) * 100) / 100) * 351.8} 
-                      className={`${restSeconds >= restTarget ? 'text-emerald-500 animate-pulse' : 'text-indigo-500'} transition-all duration-1000 ease-linear`} 
+                      strokeDashoffset={351.8 - (Math.min(100, (restRemaining / restTarget) * 100) / 100) * 351.8} 
+                      className={`${restRemaining === 0 ? 'text-emerald-500 animate-pulse' : 'text-indigo-500'} transition-all duration-500 ease-linear`} 
                     />
                   </svg>
                   <div className="flex flex-col items-center">
-                    <span className={`text-4xl font-mono font-black ${restSeconds >= restTarget ? 'text-emerald-400' : 'text-white'}`}>
-                      {Math.max(0, restTarget - restSeconds)}
+                    <span className={`text-4xl font-mono font-black ${restRemaining === 0 ? 'text-emerald-400' : 'text-white'}`}>
+                      {restRemaining}
                     </span>
                     <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1">SEC</span>
                   </div>
                 </div>
 
                 <div className="flex space-x-2 w-full mb-4">
-                  {[60, 90, 120].map(t => (
-                    <button key={t} onClick={() => setRestTarget(t)} className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors ${restTarget === t ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>{t}s</button>
+                  {[60, 90, 120, 180].map(t => (
+                    <button key={t} onClick={() => {
+                      setRestTarget(t);
+                      setRestEndTime(Date.now() + t * 1000);
+                      setRestRemaining(t);
+                    }} className={`flex-1 py-2 rounded-lg text-[11px] font-bold border transition-colors ${restTarget === t ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>{t}s</button>
                   ))}
                 </div>
 
-                <button onClick={() => setIsResting(false)} className="w-full py-4 rounded-xl bg-white text-black text-sm font-bold flex items-center justify-center space-x-2 active:scale-95 transition-transform"><Play size={16} className="fill-black" /><span>Resume Workout</span></button>
+                <button onClick={() => setIsResting(false)} className="w-full py-4 rounded-xl bg-white text-black text-sm font-bold flex items-center justify-center space-x-2 active:scale-95 transition-transform"><Play size={16} className="fill-black" /><span>Resume Now</span></button>
               </div>
-            ) : (
-              <>
-                <div className="bg-[#121214] border border-zinc-800/80 rounded-2xl p-4 mb-4 shadow-sm relative">
-                  <div className="flex justify-between items-center mb-3">
-                     <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Log Set #{currentSetNum}</span>
-                     <button onClick={() => setIsWarmup(!isWarmup)} className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border ${isWarmup ? 'bg-amber-500/10 text-amber-500 border-amber-500/30' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>Warm-up</button>
+            )}
+            
+            {!isResting && (
+              <div className="bg-[#121214] border border-zinc-800/80 rounded-2xl p-4 mb-4 shadow-sm relative">
+                <div className="flex justify-between items-center mb-3">
+                   <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Log Set #{currentSetNum}</span>
+                   <div className="flex space-x-2">
+                     <button onClick={toggle1RM} className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border ${is1RM ? 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>
+                       {isBodyweight ? 'MAX REPS' : '1RM'}
+                     </button>
+                     <button onClick={toggleWarmup} className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border ${isWarmup ? 'bg-amber-500/10 text-amber-500 border-amber-500/30' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>
+                       Warm-up
+                     </button>
+                   </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1.5 text-center truncate">{isBodyweight ? '+ Added Wt (kg)' : 'Weight (kg)'}</label>
+                    <input type="number" step="0.5" placeholder="0" value={weight} onChange={(e) => setWeight(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 text-center text-lg font-bold text-white outline-none focus:border-indigo-500 transition-colors"/>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1.5 text-center">Weight (kg)</label>
-                      <input type="number" step="0.5" placeholder="0" value={weight} onChange={(e) => setWeight(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 text-center text-lg font-bold text-white outline-none focus:border-indigo-500 transition-colors"/>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1.5 text-center">Reps</label>
-                      <input type="number" placeholder="0" value={reps} onChange={(e) => setReps(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 text-center text-lg font-bold text-white outline-none focus:border-indigo-500 transition-colors"/>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1.5 text-center">Diff (1-10)</label>
-                      <input type="number" min="1" max="10" value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 text-center text-lg font-bold text-white outline-none focus:border-indigo-500 transition-colors"/>
-                    </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1.5 text-center">Reps</label>
+                    <input type="number" placeholder="0" value={reps} onChange={(e) => setReps(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 text-center text-lg font-bold text-white outline-none focus:border-indigo-500 transition-colors"/>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase block mb-1.5 text-center">Diff (1-10)</label>
+                    <input type="number" min="1" max="10" value={difficulty} onChange={(e) => {
+                       let val = e.target.value;
+                       if (val !== '' && Number(val) > 10) val = '10';
+                       if (val !== '' && Number(val) < 1) val = '1';
+                       setDifficulty(val);
+                    }} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 text-center text-lg font-bold text-white outline-none focus:border-indigo-500 transition-colors"/>
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-3 gap-3 animate-in fade-in zoom-in-95 duration-200">
-                  <button onClick={handleLogSetAndRest} disabled={reps === '' || weight === ''} className="col-span-2 py-4 bg-white disabled:opacity-30 disabled:hover:bg-white hover:bg-zinc-200 text-black rounded-xl text-sm font-bold flex items-center justify-center space-x-2 active:scale-95 transition-all shadow-sm">
-                    <Check size={18} strokeWidth={3} /><span>Log & Rest</span>
-                  </button>
-                  {currentExIndex < exercises.length - 1 ? (
-                    <button onClick={() => setCurrentExIndex(i => i + 1)} className="py-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white rounded-xl text-sm font-bold flex items-center justify-center active:scale-95 transition-all">
-                      <span>Next</span>
-                    </button>
-                  ) : (
-                    <button onClick={() => setIsAddExModalOpen(true)} className="py-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white rounded-xl text-sm font-bold flex items-center justify-center active:scale-95 transition-all">
-                      <Plus size={16} className="mr-1"/><span>Add</span>
-                    </button>
-                  )}
-                </div>
-              </>
+                <button onClick={handleLogSetAndRest} disabled={reps === '' || weight === ''} className="w-full py-4 mt-4 bg-white disabled:opacity-30 disabled:hover:bg-white hover:bg-zinc-200 text-black rounded-xl text-sm font-bold flex items-center justify-center space-x-2 active:scale-95 transition-all shadow-sm">
+                  <Check size={18} strokeWidth={3} /><span>Log Set & Rest</span>
+                </button>
+              </div>
             )}
+            
+            <div className="grid grid-cols-1">
+              {currentExIndex < exercises.length - 1 ? (
+                <button onClick={() => setCurrentExIndex(i => i + 1)} className="py-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white rounded-xl text-sm font-bold flex items-center justify-center active:scale-95 transition-all">
+                  <span>Next Exercise</span><ChevronRight size={18} className="ml-1"/>
+                </button>
+              ) : (
+                <button onClick={() => setIsAddExModalOpen(true)} className="py-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white rounded-xl text-sm font-bold flex items-center justify-center active:scale-95 transition-all">
+                  <Plus size={16} className="mr-1"/><span>Add Exercise</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1271,8 +1656,14 @@ const LibraryTab = ({ customRoutines, setCustomRoutines, onStartRoutine, exercis
         routine={editingRoutine} exerciseDB={exerciseDB}
         onCancel={() => { setEditingRoutine(null); setIsCreatingNew(false); }}
         onSave={(savedRoutine) => {
-          if (editingRoutine) setCustomRoutines(customRoutines.map(r => r.id === savedRoutine.id ? savedRoutine : r));
-          else setCustomRoutines([...customRoutines, savedRoutine]);
+          const existingIdx = customRoutines.findIndex(r => r.id === savedRoutine.id);
+          if (existingIdx >= 0) {
+            const updated = [...customRoutines];
+            updated[existingIdx] = savedRoutine;
+            setCustomRoutines(updated);
+          } else {
+            setCustomRoutines([...customRoutines, savedRoutine]);
+          }
           setEditingRoutine(null); setIsCreatingNew(false);
         }}
       />
@@ -1365,6 +1756,7 @@ export default function App() {
   const [isPlannerOpen, setIsPlannerOpen] = useState(false);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [isWipeDataModalOpen, setIsWipeDataModalOpen] = useState(false);
   const [isDummyLoadedModalOpen, setIsDummyLoadedModalOpen] = useState(false);
@@ -1372,7 +1764,10 @@ export default function App() {
   const [selectedDayData, setSelectedDayData] = useState(null);
   const [goalPendingSync, setGoalPendingSync] = useState(null);
   const [saveRoutinePrompt, setSaveRoutinePrompt] = useState(null);
+  const [workoutRecapData, setWorkoutRecapData] = useState(null);
+  const fileInputRef = useRef(null);
 
+  const [userProfile, setUserProfile] = useState(() => { try { return JSON.parse(localStorage.getItem('fitTrack_profile')) || null; } catch { return null; } });
   const [weeklyGoal, setWeeklyGoal] = useState(() => { try { return parseInt(localStorage.getItem('fitTrack_goal')) || 0; } catch { return 0; } });
   const [customRoutines, setCustomRoutines] = useState(() => { try { return JSON.parse(localStorage.getItem('fitTrack_routines')) || []; } catch { return []; } });
   const [history, setHistory] = useState(() => { try { return JSON.parse(localStorage.getItem('fitTrack_history')) || []; } catch { return []; } });
@@ -1385,6 +1780,7 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => { if (userProfile) localStorage.setItem('fitTrack_profile', JSON.stringify(userProfile)); }, [userProfile]);
   useEffect(() => { localStorage.setItem('fitTrack_goal', weeklyGoal.toString()); }, [weeklyGoal]);
   useEffect(() => { localStorage.setItem('fitTrack_routines', JSON.stringify(customRoutines)); }, [customRoutines]);
   useEffect(() => { localStorage.setItem('fitTrack_history', JSON.stringify(history)); }, [history]);
@@ -1402,15 +1798,23 @@ export default function App() {
 
   const handleFinishWorkout = (finishedData) => {
     if (finishedData.exercises.length === 0) { setActiveSession(null); return; }
-    const isNewUntracked = finishedData.routineName === 'Empty Workout' || (!finishedData.isCustomTemplate && finishedData.hasModifications);
-    if (isNewUntracked && finishedData.exercises.length > 0) setSaveRoutinePrompt(finishedData);
-    else finalizeSaveWorkout(finishedData);
+    setWorkoutRecapData(finishedData);
+    setActiveSession(null);
+  };
+
+  const handleCloseRecap = () => {
+    const isNewUntracked = workoutRecapData.routineName === 'Empty Workout' || (!workoutRecapData.isCustomTemplate && workoutRecapData.hasModifications);
+    if (isNewUntracked && workoutRecapData.exercises.length > 0) {
+      setSaveRoutinePrompt(workoutRecapData);
+    } else {
+      finalizeSaveWorkout(workoutRecapData);
+    }
+    setWorkoutRecapData(null);
   };
 
   const finalizeSaveWorkout = (finishedData) => {
     const newHistoryItem = { id: `h_${Date.now()}`, routineName: finishedData.routineName, date: new Date().toISOString(), duration: finishedData.duration, totalRestDuration: finishedData.totalRestDuration, exercises: finishedData.exercises };
     setHistory([newHistoryItem, ...history]);
-    setActiveSession(null);
     setSaveRoutinePrompt(null);
   };
 
@@ -1423,10 +1827,29 @@ export default function App() {
   };
 
   const handleExportData = () => {
-    const data = JSON.stringify({ customRoutines, history, scheduledRoutines, weeklyGoal }, null, 2);
+    const data = JSON.stringify({ customRoutines, history, scheduledRoutines, weeklyGoal, userProfile }, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `FitTrackPro_Backup_${getLocalYYYYMMDD()}.json`; a.click();
+  };
+
+  const handleImportData = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        if(data.history) setHistory(data.history);
+        if(data.customRoutines) setCustomRoutines(data.customRoutines);
+        if(data.scheduledRoutines) setScheduledRoutines(data.scheduledRoutines);
+        if(data.userProfile) setUserProfile(data.userProfile);
+        if(data.weeklyGoal !== undefined) setWeeklyGoal(data.weeklyGoal);
+        setIsOptionsOpen(false);
+      } catch(err) {}
+    };
+    reader.readAsText(file);
+    e.target.value = null;
   };
 
   const loadDummyData = () => {
@@ -1435,35 +1858,53 @@ export default function App() {
     const dayMs = 86400000;
     let benchWeight = 40;
     let squatWeight = 60;
+    let pullupReps = 5;
 
-    for (let i = 0; i < 30; i++) {
-        const date = new Date(now - (30 - i) * 2 * dayMs).toISOString();
-        if (i % 3 === 0) { benchWeight += 2.5; squatWeight += 5; }
+    for (let i = 0; i < 60; i++) {
+        const date = new Date(now - (60 - i) * 2.25 * dayMs).toISOString(); // Over 4.5 months
+        if (i % 4 === 0) { benchWeight += 2.5; squatWeight += 5; pullupReps += 1; }
         
+        const type = i % 3;
+        let routineName, exercises;
+
+        if (type === 0) {
+            routineName = 'Push (Hypertrophy Focus)';
+            exercises = [
+                { name: 'Barbell Bench Press', muscle: 'chest', equipment: 'barbell', sets: [{ weight: benchWeight, reps: 8, difficulty: 8, isWarmup: false }, { weight: benchWeight, reps: 8, difficulty: 8.5, isWarmup: false }] },
+                { name: 'Overhead Press', muscle: 'shoulders', equipment: 'barbell', sets: [{ weight: benchWeight * 0.7, reps: 8, difficulty: 8, isWarmup: false }] }
+            ];
+        } else if (type === 1) {
+            routineName = 'Pull (Width & Thickness)';
+            exercises = [
+                { name: 'Pull-up', muscle: 'back', equipment: 'bodyweight', sets: [{ weight: 0, reps: pullupReps, difficulty: 8, isWarmup: false }, { weight: 0, reps: Math.max(1, pullupReps - 1), difficulty: 9, isWarmup: false }] },
+                { name: 'Barbell Bent Over Row', muscle: 'back', equipment: 'barbell', sets: [{ weight: benchWeight * 1.2, reps: 8, difficulty: 8, isWarmup: false }] }
+            ];
+        } else {
+            routineName = 'Legs (Quad & Ham Balance)';
+            exercises = [
+                { name: 'Barbell Squat', muscle: 'legs', equipment: 'barbell', sets: [{ weight: squatWeight, reps: 6, difficulty: 8, isWarmup: false }, { weight: squatWeight, reps: 6, difficulty: 9, isWarmup: false }] },
+                { name: 'Romanian Deadlift', muscle: 'legs', equipment: 'barbell', sets: [{ weight: squatWeight * 0.8, reps: 8, difficulty: 7, isWarmup: false }] }
+            ];
+        }
+
         newHistory.unshift({
-            id: `dummy_${i}`, date: date, duration: 2400 + Math.floor(Math.random() * 600),
-            routineName: i % 2 === 0 ? 'Push (Hypertrophy Focus)' : 'Legs (Quad & Ham Balance)',
+            id: `dummy_${Date.now()}_${i}`, date: date, duration: 2400 + Math.floor(Math.random() * 600),
+            routineName: routineName,
             totalRestDuration: 600,
-            exercises: i % 2 === 0 ? [
-                { name: 'Barbell Bench Press', muscle: 'chest', sets: [{ weight: benchWeight, reps: 8, difficulty: 8, isWarmup: false }, { weight: benchWeight, reps: 8, difficulty: 8.5, isWarmup: false }] },
-                { name: 'Overhead Press', muscle: 'shoulders', sets: [{ weight: benchWeight * 0.7, reps: 8, difficulty: 8, isWarmup: false }] }
-            ] : [
-                { name: 'Barbell Squat', muscle: 'legs', sets: [{ weight: squatWeight, reps: 6, difficulty: 8, isWarmup: false }, { weight: squatWeight, reps: 6, difficulty: 9, isWarmup: false }] },
-                { name: 'Romanian Deadlift', muscle: 'legs', sets: [{ weight: squatWeight * 0.8, reps: 8, difficulty: 7, isWarmup: false }] }
-            ]
+            exercises: exercises
         });
     }
     setHistory(newHistory);
-    setScheduledRoutines({ 0: { id: 'std-push', name: 'Push (Hypertrophy Focus)' }, 2: { id: 'std-legs', name: 'Legs (Quad & Ham Balance)' }, 6: { id: 'rest-day', name: 'Rest Day', isRest: true } });
+    setScheduledRoutines({ 0: { id: 'std-push', name: 'Push (Hypertrophy Focus)' }, 2: { id: 'std-legs', name: 'Legs (Quad & Ham Balance)' }, 4: { id: 'std-pull', name: 'Pull (Width & Thickness)' } });
     setWeeklyGoal(4);
     setIsOptionsOpen(false);
     setIsDummyLoadedModalOpen(true);
   };
 
   const executeWipeData = () => {
-    setHistory([]); setCustomRoutines([]); setScheduledRoutines({}); setWeeklyGoal(0);
+    setHistory([]); setCustomRoutines([]); setScheduledRoutines({}); setWeeklyGoal(0); setUserProfile(null);
     localStorage.removeItem('fitTrack_routines'); localStorage.removeItem('fitTrack_history');
-    localStorage.removeItem('fitTrack_schedule'); localStorage.removeItem('fitTrack_goal');
+    localStorage.removeItem('fitTrack_schedule'); localStorage.removeItem('fitTrack_goal'); localStorage.removeItem('fitTrack_profile');
     setIsWipeDataModalOpen(false);
     setIsOptionsOpen(false);
   };
@@ -1477,23 +1918,96 @@ export default function App() {
     monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
     monday.setHours(0,0,0,0);
     const thisWeekHistory = history.filter(h => new Date(h.date) >= monday);
-    const uniqueDays = new Set(thisWeekHistory.map(h => getLocalYYYYMMDD(h.date)));
+    const uniqueDays = new Set(thisWeekHistory.map(h => getLocalYYYYMMDD(new Date(h.date))));
     return uniqueDays.size;
   }, [history]);
+
+  // Swipe Navigation Logic
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchEnd, setTouchEnd] = useState(null);
+  const minSwipeDistance = 50;
+
+  const onTouchStart = (e) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+  const onTouchMove = (e) => setTouchEnd(e.targetTouches[0].clientX);
+  const onTouchEndEvent = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    const tabs = ['home', 'library', 'progress'];
+    const currentIndex = tabs.indexOf(activeTab);
+    
+    if (isLeftSwipe && currentIndex < tabs.length - 1) setActiveTab(tabs[currentIndex + 1]);
+    if (isRightSwipe && currentIndex > 0) setActiveTab(tabs[currentIndex - 1]);
+  };
+
+  // Streak logic factoring in rest days
+  const currentStreak = useMemo(() => {
+    const datesWithWorkouts = new Set(history.map(h => getLocalYYYYMMDD(new Date(h.date))));
+    const restDaysOfWeek = Object.keys(scheduledRoutines).filter(k => scheduledRoutines[k].isRest).map(Number);
+    
+    const isStreakDay = (d) => {
+       const dateStr = getLocalYYYYMMDD(d);
+       if (datesWithWorkouts.has(dateStr)) return true;
+       const myDayOfWeek = (d.getDay() + 6) % 7;
+       if (restDaysOfWeek.includes(myDayOfWeek)) return true;
+       return false;
+    };
+
+    let current = 0;
+    let checkDate = new Date();
+    checkDate.setHours(0,0,0,0);
+    const todayStr = getLocalYYYYMMDD(checkDate);
+
+    if (isStreakDay(checkDate)) {
+       current++;
+       checkDate.setDate(checkDate.getDate() - 1);
+    } else {
+       const yesterday = new Date(checkDate);
+       yesterday.setDate(yesterday.getDate() - 1);
+       if (isStreakDay(yesterday)) {
+           checkDate = yesterday;
+       } else {
+           current = 0;
+       }
+    }
+
+    if (current > 0) {
+        while(true) {
+            if (getLocalYYYYMMDD(checkDate) === todayStr) {
+               checkDate.setDate(checkDate.getDate() - 1);
+               continue;
+            }
+            if (isStreakDay(checkDate)) {
+                current++;
+                checkDate.setDate(checkDate.getDate() - 1);
+            } else {
+                break;
+            }
+        }
+    }
+    return current;
+  }, [history, scheduledRoutines]);
 
   return (
     <div className="flex justify-center w-full h-[100dvh] bg-black font-sans text-white select-none overflow-hidden">
       <div className="w-full max-w-md h-full flex flex-col bg-[#09090b] shadow-2xl relative">
         
         {isTutorialOpen && <TutorialOverlay onClose={() => setIsTutorialOpen(false)} />}
+        {!isTutorialOpen && !userProfile && <UserProfileModal isOpen={true} onSave={(profile) => setUserProfile(profile)} />}
+        <UserProfileModal isOpen={isProfileModalOpen} onSave={(profile) => { setUserProfile(profile); setIsProfileModalOpen(false); }} />
+        {workoutRecapData && <WorkoutRecapModal data={workoutRecapData} userProfile={userProfile} historyLength={history.filter(h => h.routineName === workoutRecapData.routineName).length} onDone={handleCloseRecap} />}
         
         {activeSession ? (
-          <ActiveWorkout session={activeSession} history={history} exerciseDB={exerciseDB} onCancelWorkout={() => setActiveSession(null)} onFinishWorkout={handleFinishWorkout} />
+          <ActiveWorkout session={activeSession} history={history} userProfile={userProfile} exerciseDB={exerciseDB} onCancelWorkout={() => setActiveSession(null)} onFinishWorkout={handleFinishWorkout} />
         ) : (
-          <div className="flex-1 flex flex-col overflow-hidden pb-[70px]">
+          <div className="flex-1 flex flex-col overflow-hidden pb-[70px]" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEndEvent}>
             {activeTab === 'home' && (
               <div className="flex-1 flex flex-col overflow-y-auto p-4 animate-in fade-in duration-300">
-                <div className="flex items-center justify-between pt-2 mb-6">
+                <div className="flex items-center justify-between pt-2 mb-4">
                   <div>
                     <h1 className="text-3xl font-black text-white tracking-tighter flex items-center space-x-2"><span>FitTrack</span><span className="text-indigo-500">.PRO</span></h1>
                     <p className="text-xs font-medium text-zinc-400 mt-0.5">Track overload & rest efficiently</p>
@@ -1504,15 +2018,29 @@ export default function App() {
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setIsOptionsOpen(false)} />
                         <div className="absolute right-0 top-14 w-56 bg-[#121214] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50">
+                          <button onClick={() => { setIsProfileModalOpen(true); setIsOptionsOpen(false); }} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><User size={16} className="mr-3 text-sky-400"/> Edit Profile</button>
+                          <div className="h-[1px] bg-zinc-800"></div>
                           <button onClick={() => { setIsTutorialOpen(true); setIsOptionsOpen(false); }} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><Info size={16} className="mr-3 text-indigo-400"/> Replay Tutorial</button>
                           <div className="h-[1px] bg-zinc-800"></div>
                           <button onClick={() => loadDummyData()} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><DatabaseZap size={16} className="mr-3 text-emerald-400"/> Load Dummy Data</button>
                           <button onClick={() => handleExportData()} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><Download size={16} className="mr-3 text-sky-400"/> Export JSON Data</button>
+                          <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportData} className="hidden" />
+                          <button onClick={() => fileInputRef.current?.click()} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><Layers size={16} className="mr-3 text-amber-400"/> Import JSON Data</button>
                           <div className="h-[1px] bg-zinc-800"></div>
                           <button onClick={() => setIsWipeDataModalOpen(true)} className="w-full text-left px-4 py-3.5 text-sm font-bold text-rose-500 hover:bg-zinc-900 flex items-center"><Trash2 size={16} className="mr-3"/> Wipe All Data</button>
                         </div>
                       </>
                     )}
+                  </div>
+                </div>
+
+                <div className="mb-4 flex justify-between items-center px-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xl drop-shadow-md">🔥</span>
+                    <div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase block">Current Streak</span>
+                      <span className="text-sm font-black text-white">{currentStreak} Day{currentStreak !== 1 && 's'}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -1551,7 +2079,7 @@ export default function App() {
                            <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${Math.min(100, (workoutsThisWeek/weeklyGoal)*100)}%`}}></div></div>
                         </div>
                       ) : (
-                        <h3 className="text-sm font-bold text-zinc-500 tracking-tight leading-tight">No goal set.</h3>
+                        <h3 className="text-sm font-bold text-zinc-500 tracking-tight leading-tight mt-1">No goal set.</h3>
                       )}
                     </div>
                     <button onClick={() => setIsGoalModalOpen(true)} className="mt-4 w-full py-2.5 bg-zinc-900 border border-zinc-800 text-white rounded-xl text-xs font-bold active:scale-95 transition-transform">{weeklyGoal === 0 ? 'Set Goal' : 'Edit Goal'}</button>
@@ -1565,12 +2093,12 @@ export default function App() {
                 </div>
               </div>
             )}
-            {activeTab === 'library' && <LibraryTab customRoutines={customRoutines} setCustomRoutines={setCustomRoutines} onStartRoutine={handleStartRoutine} exerciseDB={exerciseDB} scheduledRoutines={scheduledRoutines} onUpdateSchedule={setScheduledRoutines} />}
-            {activeTab === 'progress' && <ProgressMainTab history={history} onDeleteSession={(id) => setHistory(history.filter(h => h.id !== id))} />}
+            {activeTab === 'library' && <LibraryTab customRoutines={customRoutines} setCustomRoutines={setCustomRoutines} onStartRoutine={handleStartRoutine} exerciseDB={exerciseDB} />}
+            {activeTab === 'progress' && <ProgressMainTab history={history} userProfile={userProfile} weeklyGoal={weeklyGoal} scheduledRoutines={scheduledRoutines} onDeleteSession={(id) => setHistory(history.filter(h => h.id !== id))} onSaveAsRoutine={setSaveRoutinePrompt} />}
           </div>
         )}
 
-        {!activeSession && (
+        {!activeSession && !workoutRecapData && (
           <div className="absolute bottom-0 inset-x-0 h-[70px] bg-[#09090b]/95 backdrop-blur-md border-t border-zinc-900 flex items-center justify-around z-40 pb-safe">
             <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center justify-center space-y-1 w-full h-full transition-colors ${activeTab === 'home' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}>
               <Flame size={24} strokeWidth={activeTab === 'home' ? 2.5 : 2} className={activeTab === 'home' ? 'text-indigo-400' : ''} /><span className="text-[10px] font-bold">Home</span>
@@ -1586,7 +2114,7 @@ export default function App() {
 
         <StartWorkoutModal isOpen={isStartModalOpen} onClose={() => setIsStartModalOpen(false)} onStartEmpty={() => { setIsStartModalOpen(false); handleStartEmpty(); }} onOpenLibrarySelection={() => { setIsStartModalOpen(false); setIsLibraryPickerOpen(true); }} />
         <LibraryWorkoutPickerModal isOpen={isLibraryPickerOpen} onClose={() => setIsLibraryPickerOpen(false)} customRoutines={customRoutines} onSelectRoutine={(r) => { setIsLibraryPickerOpen(false); handleStartRoutine(r); }} />
-        <DayDetailsModal dayData={selectedDayData} onClose={() => setSelectedDayData(null)} />
+        <DayDetailsModal dayData={selectedDayData} onClose={() => setSelectedDayData(null)} onOpenWorkout={() => setActiveTab('progress')} />
         <SaveRoutinePromptModal isOpen={!!saveRoutinePrompt} onSave={handleSaveRoutineAndFinish} onSkip={() => finalizeSaveWorkout(saveRoutinePrompt)} />
         
         <GoalSettingModal isOpen={isGoalModalOpen} currentGoal={weeklyGoal} onClose={() => setIsGoalModalOpen(false)} onSave={(val) => setWeeklyGoal(val)} />
@@ -1594,7 +2122,7 @@ export default function App() {
         <SyncGoalModal goalPendingSync={goalPendingSync} onConfirm={(days) => { setWeeklyGoal(days); setGoalPendingSync(null); }} onSkip={() => setGoalPendingSync(null)} />
         
         <WipeDataConfirmModal isOpen={isWipeDataModalOpen} onConfirm={executeWipeData} onCancel={() => setIsWipeDataModalOpen(false)} />
-        <MessageModal isOpen={isDummyLoadedModalOpen} title="Data Loaded!" message="30 sessions of dummy data have been injected. Check your Progress tab!" onClose={() => setIsDummyLoadedModalOpen(false)} isSuccess={true} />
+        <MessageModal isOpen={isDummyLoadedModalOpen} title="Data Loaded!" message="60 sessions of dummy data have been injected. Check your Progress tab!" onClose={() => setIsDummyLoadedModalOpen(false)} isSuccess={true} />
       </div>
     </div>
   );
