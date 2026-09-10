@@ -4,11 +4,11 @@ import {
   ChevronLeft, ChevronRight, Dumbbell, History as HistoryIcon, 
   Layers, Search, Flame, Sparkles, ArrowRight, CalendarCheck, 
   CalendarDays, Activity, Target, Trophy, ArrowRightLeft, TrendingUp,
-  Menu, Download, Info, DatabaseZap, User, Save
+  Menu, Download, Info, DatabaseZap, User
 } from 'lucide-react';
 
 const DAYS_OF_WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const MUSCLE_GROUPS = ['All', 'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Legs', 'Core', 'Bodyweight'];
+const MUSCLE_GROUPS = ['All', 'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Legs', 'Core'];
 
 const STANDARD_ROUTINES = [
   {
@@ -111,33 +111,30 @@ const FALLBACK_DB = [
   { id: 'f20', name: 'Seated Leg Curl', muscle: 'legs', equipment: 'machine', image: 'Seated_Leg_Curl/0.jpg' },
   { id: 'f21', name: 'Seated Calf Raise', muscle: 'legs', equipment: 'machine', image: 'Seated_Calf_Raise/0.jpg' },
   { id: 'f22', name: 'Front Barbell Squat', muscle: 'legs', equipment: 'barbell', image: 'Front_Barbell_Squat/0.jpg' },
-  { id: 'f23', name: 'Push-up', muscle: 'chest', equipment: 'bodyweight', image: 'Push_Up/0.jpg' }
+  { id: 'f23', name: 'Push-up', muscle: 'chest', equipment: 'bodyweight', image: 'Push_Up/0.jpg' },
+  { id: 'f24', name: 'Dips', muscle: 'triceps', equipment: 'bodyweight', image: 'Dips/0.jpg' },
+  { id: 'f25', name: 'Lunges', muscle: 'legs', equipment: 'bodyweight', image: 'Lunges/0.jpg' }
 ];
 
-const isExerciseBodyweight = (ex) => {
-  if (!ex) return false;
-  if (ex.equipment && ex.equipment.toLowerCase().includes('body')) return true;
-  const n = ex.name.toLowerCase();
-  const bwKeywords = ['pull-up', 'pull up', 'push-up', 'push up', 'drop push', 'dip', 'plank', 'chin-up', 'bodyweight', 'calf raise', 'sit-up', 'crunch', 'lunges'];
-  return bwKeywords.some(kw => n.includes(kw));
-};
-
+let globalAudioCtx = null;
 const playRestChime = () => {
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    if (!globalAudioCtx) {
+      globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
+    
+    const osc = globalAudioCtx.createOscillator();
+    const gain = globalAudioCtx.createGain();
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(globalAudioCtx.destination);
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, ctx.currentTime);
-    gain.gain.setValueAtTime(0, ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.05);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 1.5);
+    osc.frequency.setValueAtTime(880, globalAudioCtx.currentTime);
+    gain.gain.setValueAtTime(0, globalAudioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(1, globalAudioCtx.currentTime + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, globalAudioCtx.currentTime + 1.2);
+    osc.start(globalAudioCtx.currentTime);
+    osc.stop(globalAudioCtx.currentTime + 1.5);
   } catch(e) {}
 };
 
@@ -187,13 +184,21 @@ const getImageUrl = (imagePath) => {
   return `https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/${imagePath}`;
 };
 
+const isExerciseBodyweight = (ex) => {
+  if (!ex) return false;
+  if (ex.equipment?.toLowerCase().includes('body')) return true;
+  const n = ex.name.toLowerCase();
+  const bwKeywords = ['pull-up', 'push-up', 'drop push', 'dip', 'plank', 'chin-up', 'bodyweight', 'sit-up', 'crunch', 'lunges'];
+  return bwKeywords.some(kw => n.includes(kw));
+};
+
 const calculate1RM = (weight, reps) => {
   if (weight === undefined || reps === undefined || weight === 0) return 0;
   return weight * (1 + reps / 30);
 };
 
-const getSetVolume = (weight, reps, exercise, userProfile) => {
-  const w = isExerciseBodyweight(exercise) ? (Number(weight) + Number(userProfile?.weight || 75)) : Number(weight);
+const getSetVolume = (weight, reps, ex, userProfile) => {
+  const w = isExerciseBodyweight(ex) ? (Number(weight) + Number(userProfile?.weight || 75)) : Number(weight);
   return w * Number(reps);
 };
 
@@ -227,17 +232,17 @@ const ExerciseImage = ({ srcPath, alt, className, fallbackSize = 24, muscle }) =
 const TutorialOverlay = ({ onClose }) => {
   const [step, setStep] = useState(0);
   const steps = [
-    { title: "Welcome to FitTrack.PRO", desc: "Let's take a quick 5-step tour so you can maximize your gains. (Swipe left and right anywhere to navigate tabs!)", icon: <Flame size={40} className="text-indigo-500" /> },
-    { title: "The Planner & Goals", desc: "Use the Planner on the Home Screen to schedule your workout days. Set a Weekly Goal to keep yourself accountable and watch the progress bar fill up as you train.", icon: <Target size={40} className="text-emerald-500" /> },
-    { title: "Smart Active Workouts", desc: "Inside a workout: Tap the 'Swap' icon if a machine is taken. Toggle '1RM' to mark your heavy records, and use the background-safe circular Rest Timer.", icon: <Activity size={40} className="text-amber-500" /> },
-    { title: "Bodyweight Smarts", desc: "If you log a bodyweight exercise like Pull-ups, the app automatically factors in your body weight for total volume and accurate calorie calculations!", icon: <Dumbbell size={40} className="text-rose-500" /> },
-    { title: "Progress Analytics", desc: "Your 1-Rep Max (1RM), Max Reps, and muscle workloads are automatically calculated. Check the Progress Tab to watch your trendlines grow over time!", icon: <TrendingUp size={40} className="text-sky-500" /> }
+    { title: "Welcome to FitTrack.PRO", desc: "Let's take a quick 4-step tour to maximize your tracking. Pro-Tip: You can swipe left and right anywhere to change tabs!", icon: <Flame size={40} className="text-indigo-500" /> },
+    { title: "The Planner & Goals", desc: "Use the Planner on the Home Screen to schedule your workout days. Set a Weekly Goal to keep yourself accountable and watch the progress bar fill up.", icon: <Target size={40} className="text-emerald-500" /> },
+    { title: "Smart Active Workouts", desc: "Inside a workout: Tap 'Swap' if a machine is taken. Toggle '1RM / MAX REPS' to tag heavy PR sets, and use the background-safe circular Rest Timer.", icon: <Activity size={40} className="text-amber-500" /> },
+    { title: "Library Shortcuts", desc: "In the Workout Library, you can Tap and Hold any routine to instantly peek at its exercises without starting it. Edit templates to make them your own.", icon: <Layers size={40} className="text-purple-500" /> },
+    { title: "Progress Analytics", desc: "Your 1-Rep Max (1RM) and muscle group volume are automatically calculated. Bodyweight exercises intelligently factor in your own weight automatically!", icon: <TrendingUp size={40} className="text-sky-500" /> }
   ];
 
   return (
     <div className="fixed inset-0 z-[200] bg-[#09090b]/95 backdrop-blur-md flex flex-col animate-in fade-in duration-300">
       <div className="flex justify-end p-4 pt-safe w-full max-w-md mx-auto relative">
-        <button onClick={onClose} className="absolute right-6 top-6 px-5 py-2.5 bg-zinc-900 rounded-full text-xs font-bold text-zinc-300 uppercase tracking-wider hover:bg-zinc-800 active:scale-95 transition-all z-50">Skip</button>
+        <button onClick={onClose} aria-label="Skip Tutorial" className="absolute right-6 top-6 px-5 py-2.5 bg-zinc-900 rounded-full text-xs font-bold text-zinc-300 uppercase tracking-wider hover:bg-zinc-800 active:scale-95 transition-all z-50">Skip</button>
       </div>
       
       <div className="flex-1 flex flex-col items-center justify-center text-center px-6 pb-12 w-full max-w-sm mx-auto">
@@ -256,7 +261,7 @@ const TutorialOverlay = ({ onClose }) => {
         <div className="flex space-x-3 w-full">
           {step > 0 && <button onClick={() => setStep(s => s - 1)} className="flex-1 py-4 bg-zinc-900 text-white rounded-2xl font-bold active:scale-95 transition-transform">Back</button>}
           {step < steps.length - 1 ? (
-            <button onClick={() => setStep(s => s + 1)} className="flex-[2] py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition-transform">Next</button>
+            <button onClick={() => setStep(s => s + 1)} className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition-transform">Next</button>
           ) : (
             <button onClick={onClose} className="flex-[2] py-4 bg-white text-black rounded-2xl font-bold shadow-xl active:scale-95 transition-transform">Get Started</button>
           )}
@@ -326,6 +331,7 @@ const WorkoutRecapModal = ({ data, userProfile, historyLength, onDone }) => {
   if (!data) return null;
   
   const volume = data.exercises.reduce((acc, ex) => acc + ex.sets.reduce((sAcc, s) => sAcc + getSetVolume(s.weight, s.reps, ex, userProfile), 0), 0);
+  
   const durationMins = Math.max(1, Math.round(data.duration / 60));
   const userWeight = userProfile?.weight || 75;
   const calories = Math.round((4.5 * 3.5 * userWeight / 200) * durationMins);
@@ -383,7 +389,7 @@ const MessageModal = ({ isOpen, title, message, onClose, isSuccess = true }) => 
   );
 };
 
-const WeeklyTracker = ({ history, onSelectDay }) => {
+const WeeklyTracker = React.memo(({ history, onSelectDay }) => {
   const weekDays = useMemo(() => {
     const today = new Date();
     const dayOfWeek = today.getDay(); 
@@ -391,19 +397,14 @@ const WeeklyTracker = ({ history, onSelectDay }) => {
     
     const monday = new Date(today);
     monday.setDate(today.getDate() - diffToMonday);
-    monday.setHours(0, 0, 0, 0);
-
+    
     return DAYS_OF_WEEK.map((dayName, index) => {
       const targetDate = new Date(monday);
       targetDate.setDate(monday.getDate() + index);
-      const dateStr = getLocalYYYYMMDD(targetDate.toISOString());
+      const dateStr = getLocalYYYYMMDD(targetDate);
       
-      const loggedWorkouts = history.filter(h => {
-        const itemDate = getLocalYYYYMMDD(h.date);
-        return itemDate === dateStr;
-      });
-
-      const isToday = getLocalYYYYMMDD(new Date().toISOString()) === dateStr;
+      const loggedWorkouts = history.filter(h => getLocalYYYYMMDD(h.date) === dateStr);
+      const isToday = getLocalYYYYMMDD(new Date()) === dateStr;
 
       return { name: dayName, date: targetDate, dateStr, dayNum: targetDate.getDate(), workouts: loggedWorkouts, hasWorkout: loggedWorkouts.length > 0, isToday };
     });
@@ -431,7 +432,7 @@ const WeeklyTracker = ({ history, onSelectDay }) => {
       </div>
     </div>
   );
-};
+});
 
 const DayDetailsModal = ({ dayData, onClose, onOpenWorkout }) => {
   if (!dayData) return null;
@@ -443,10 +444,10 @@ const DayDetailsModal = ({ dayData, onClose, onOpenWorkout }) => {
             {dayData.date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
           </h2>
           <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider mt-1">
-            {dayData.workouts.length} session{dayData.workouts.length === 1 ? '' : 's'} logged
+            {dayData.workouts.length} session(s) logged
           </p>
         </div>
-        <button onClick={onClose} className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center hover:bg-zinc-800 transition-colors">
+        <button onClick={onClose} aria-label="Close" className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center hover:bg-zinc-800 transition-colors">
           <X size={20} />
         </button>
       </div>
@@ -458,7 +459,11 @@ const DayDetailsModal = ({ dayData, onClose, onOpenWorkout }) => {
       ) : (
         <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
           {dayData.workouts.map((w, idx) => (
-            <div key={w.id || idx} onClick={() => { onOpenWorkout(w); onClose(); }} className="bg-[#121214] border border-zinc-800/80 p-5 rounded-2xl cursor-pointer hover:border-zinc-700 transition-all active:scale-95 flex items-center justify-between">
+            <button 
+              key={w.id || idx} 
+              onClick={() => { onOpenWorkout(w); onClose(); }} 
+              className="w-full text-left bg-[#121214] border border-zinc-800/80 p-5 rounded-2xl cursor-pointer hover:border-zinc-700 transition-all active:scale-95 flex items-center justify-between"
+            >
               <div>
                 <h4 className="text-base font-bold text-white tracking-tight">{w.routineName || 'Custom Workout'}</h4>
                 <div className="flex items-center space-x-3 mt-1.5 text-xs text-zinc-400 font-medium">
@@ -467,7 +472,7 @@ const DayDetailsModal = ({ dayData, onClose, onOpenWorkout }) => {
                 </div>
               </div>
               <ChevronRight size={18} className="text-zinc-600" />
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -495,7 +500,7 @@ const WeeklyPlannerModal = ({ isOpen, onClose, scheduledRoutines, customRoutines
       <div className="fixed inset-0 z-[100] bg-[#09090b]/95 backdrop-blur-sm flex flex-col p-4 pt-12 animate-in slide-in-from-bottom-4 duration-300">
         <div className="flex justify-between items-center mb-6 pt-safe">
           <div><h2 className="text-2xl font-bold text-white tracking-tight">Select Routine</h2><p className="text-xs font-medium text-indigo-400 mt-1 uppercase tracking-wider">For {DAYS_OF_WEEK[pickerDay]}</p></div>
-          <button onClick={() => setPickerDay(null)} className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center hover:bg-zinc-800 transition-colors"><X size={20}/></button>
+          <button onClick={() => setPickerDay(null)} aria-label="Close" className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center hover:bg-zinc-800 transition-colors"><X size={20}/></button>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 pb-20">
           <button onClick={() => { const s = {...tempSchedule}; delete s[pickerDay]; setTempSchedule(s); setPickerDay(null); }} className="w-full p-4 rounded-2xl bg-zinc-900 border border-rose-900/50 text-rose-500 hover:bg-rose-500/10 text-sm font-bold active:scale-95 transition-all text-left flex justify-between items-center">
@@ -580,7 +585,7 @@ const GoalSettingModal = ({ isOpen, currentGoal, onClose, onSave }) => {
   );
 };
 
-const StatsView = ({ history, userProfile }) => {
+const StatsView = React.memo(({ history, userProfile }) => {
   const [statsMode, setStatsMode] = useState('1rm'); // '1rm' or 'muscle_strength'
   const [selectedExercise, setSelectedExercise] = useState('Barbell Bench Press');
   const [selectedMuscleChart, setSelectedMuscleChart] = useState('Chest');
@@ -727,7 +732,7 @@ const StatsView = ({ history, userProfile }) => {
           </select>
         ) : (
           <select value={selectedMuscleChart} onChange={(e) => setSelectedMuscleChart(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:border-indigo-500 appearance-none">
-            {MUSCLE_GROUPS.filter(m => m !== 'All' && m !== 'Bodyweight').map(m => <option key={m} value={m}>{m} Strength Trend</option>)}
+            {MUSCLE_GROUPS.filter(m => m !== 'All').map(m => <option key={m} value={m}>{m} Strength Trend</option>)}
           </select>
         )}
       </div>
@@ -817,9 +822,9 @@ const StatsView = ({ history, userProfile }) => {
       )}
     </div>
   );
-};
+});
 
-const HistoryCalendarView = ({ history, onDeleteSession, userProfile, weeklyGoal, scheduledRoutines, onSaveAsRoutine }) => {
+const HistoryCalendarView = React.memo(({ history, onDeleteSession, userProfile, weeklyGoal, scheduledRoutines, onSaveAsRoutine }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedWorkout, setSelectedWorkout] = useState(null);
 
@@ -902,8 +907,8 @@ const HistoryCalendarView = ({ history, onDeleteSession, userProfile, weeklyGoal
         <button onClick={() => setSelectedWorkout(null)} className="flex items-center text-xs font-bold text-indigo-400 mb-4 bg-indigo-500/10 px-3 py-1.5 rounded-lg w-fit"><ChevronLeft size={16} className="mr-1" /> Back to Calendar</button>
         <div className="bg-[#121214] border border-zinc-800/80 p-5 rounded-2xl mb-4 shadow-sm flex-shrink-0 relative">
           <div className="absolute top-4 right-4 flex space-x-2">
-            <button onClick={() => onSaveAsRoutine(selectedWorkout)} className="w-8 h-8 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center hover:bg-indigo-500/20 transition-colors" title="Save to Library"><Layers size={14}/></button>
-            <button onClick={() => { onDeleteSession(selectedWorkout.id); setSelectedWorkout(null); }} className="w-8 h-8 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center hover:bg-rose-500/20 transition-colors" title="Delete"><Trash2 size={14}/></button>
+            <button onClick={() => onSaveAsRoutine(selectedWorkout)} aria-label="Save as Routine" className="w-8 h-8 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center hover:bg-indigo-500/20 transition-colors" title="Save to Library"><Layers size={14}/></button>
+            <button onClick={() => { onDeleteSession(selectedWorkout.id); setSelectedWorkout(null); }} aria-label="Delete" className="w-8 h-8 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center hover:bg-rose-500/20 transition-colors" title="Delete"><Trash2 size={14}/></button>
           </div>
           <h4 className="text-lg font-bold text-white tracking-tight pr-20">{selectedWorkout.routineName}</h4>
           <p className="text-xs font-medium text-zinc-500 mt-1">{new Date(selectedWorkout.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })}</p>
@@ -942,9 +947,9 @@ const HistoryCalendarView = ({ history, onDeleteSession, userProfile, weeklyGoal
     <div className="animate-in fade-in duration-300 pb-20">
       <div className="bg-[#121214] border border-zinc-800/80 rounded-2xl p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
-          <button onClick={prevMonth} className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400"><ChevronLeft size={18}/></button>
+          <button onClick={prevMonth} aria-label="Previous Month" className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400"><ChevronLeft size={18}/></button>
           <h3 className="text-sm font-bold text-white uppercase tracking-wider">{currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</h3>
-          <button onClick={nextMonth} className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400"><ChevronRight size={18}/></button>
+          <button onClick={nextMonth} aria-label="Next Month" className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400"><ChevronRight size={18}/></button>
         </div>
         <div className="grid grid-cols-7 gap-1 text-center mb-2">
           {DAYS_OF_WEEK.map(d => <span key={d} className="text-[10px] font-bold text-zinc-500 uppercase">{d}</span>)}
@@ -990,7 +995,7 @@ const HistoryCalendarView = ({ history, onDeleteSession, userProfile, weeklyGoal
       </div>
     </div>
   );
-};
+});
 
 const ProgressMainTab = ({ history, userProfile, onDeleteSession, weeklyGoal, scheduledRoutines, onSaveAsRoutine }) => {
   const [view, setView] = useState('stats'); 
@@ -1015,7 +1020,7 @@ const StartWorkoutModal = ({ isOpen, onClose, onStartEmpty, onOpenLibrarySelecti
       <div className="bg-[#121214] border border-zinc-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-bold text-white">Start Session</h3>
-          <button onClick={onClose} className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-white"><X size={18}/></button>
+          <button onClick={onClose} aria-label="Close" className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-white"><X size={18}/></button>
         </div>
         <div className="space-y-3">
           <button onClick={onStartEmpty} className="w-full bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 p-5 rounded-2xl text-left transition-colors flex items-center justify-between active:scale-95">
@@ -1047,7 +1052,7 @@ const LibraryWorkoutPickerModal = ({ isOpen, onClose, customRoutines, onSelectRo
           <h2 className="text-2xl font-bold text-white tracking-tight">Select Workout</h2>
           <p className="text-xs text-zinc-500 mt-1">Choose a routine to start</p>
         </div>
-        <button onClick={onClose} className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center active:scale-95"><X size={20}/></button>
+        <button onClick={onClose} aria-label="Close" className="w-10 h-10 rounded-full bg-zinc-900 text-white flex items-center justify-center active:scale-95"><X size={20}/></button>
       </div>
       <div className="flex-1 overflow-y-auto space-y-6 pb-20">
         {customRoutines.length > 0 && (
@@ -1156,7 +1161,7 @@ const ExerciseSelectorModal = ({ isOpen, onClose, exerciseDB, onSelectExercise, 
       <div className="bg-[#121214] border border-zinc-800 rounded-3xl p-5 max-w-md w-full h-[85vh] shadow-2xl flex flex-col">
         <div className="flex justify-between items-center mb-3">
           <h3 className="text-lg font-bold text-white">Select Exercise</h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center">
+          <button onClick={onClose} aria-label="Close" className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center">
             <X size={16} />
           </button>
         </div>
@@ -1167,7 +1172,7 @@ const ExerciseSelectorModal = ({ isOpen, onClose, exerciseDB, onSelectExercise, 
         </div>
 
         <div className="flex space-x-1.5 overflow-x-auto pb-2 mb-3 scrollbar-none flex-shrink-0">
-          {MUSCLE_GROUPS.map((mg) => (
+          {['All', 'Bodyweight', ...MUSCLE_GROUPS.filter(m => m !== 'All')].map((mg) => (
             <button key={mg} onClick={() => setSelectedMuscle(mg)} className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors ${selectedMuscle === mg ? 'bg-indigo-600 text-white' : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:bg-zinc-800'}`}>
               {mg}
             </button>
@@ -1181,7 +1186,7 @@ const ExerciseSelectorModal = ({ isOpen, onClose, exerciseDB, onSelectExercise, 
             filteredExercises.map((exercise) => {
               const imgUrl = getImageUrl(exercise.image || (exercise.images && exercise.images[0]));
               return (
-                <div key={exercise.id || exercise.name} onClick={() => { onSelectExercise(exercise); onClose(); }} className="bg-zinc-900 hover:bg-zinc-800/80 border border-zinc-800/80 p-2.5 rounded-2xl flex items-center space-x-3 cursor-pointer transition-colors">
+                <button key={exercise.id || exercise.name} onClick={() => { onSelectExercise(exercise); onClose(); }} className="w-full text-left bg-zinc-900 hover:bg-zinc-800/80 border border-zinc-800/80 p-2.5 rounded-2xl flex items-center space-x-3 transition-colors">
                   <div className="w-12 h-12 rounded-xl bg-zinc-900 flex-shrink-0 overflow-hidden border border-zinc-800 flex items-center justify-center">
                     {imgUrl ? <img src={imgUrl} alt={exercise.name} className="w-full h-full object-cover" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }}/> : <Dumbbell size={18} className="text-zinc-400" />}
                   </div>
@@ -1190,7 +1195,7 @@ const ExerciseSelectorModal = ({ isOpen, onClose, exerciseDB, onSelectExercise, 
                     <p className="text-xs text-zinc-400 capitalize">{exercise.muscle || (exercise.primaryMuscles && exercise.primaryMuscles[0]) || 'General'} • {exercise.equipment || 'Any'}</p>
                   </div>
                   <Plus size={16} className="text-indigo-400 flex-shrink-0" />
-                </div>
+                </button>
               );
             })
           )}
@@ -1200,7 +1205,7 @@ const ExerciseSelectorModal = ({ isOpen, onClose, exerciseDB, onSelectExercise, 
   );
 };
 
-const ActiveWorkout = ({ session, history, userProfile, onFinishWorkout, onCancelWorkout, exerciseDB }) => {
+const ActiveWorkout = React.memo(({ session, history, userProfile, onFinishWorkout, onCancelWorkout, exerciseDB }) => {
   const [exercises, setExercises] = useState(session.exercises || []);
   const [currentExIndex, setCurrentExIndex] = useState(0);
 
@@ -1363,7 +1368,7 @@ const ActiveWorkout = ({ session, history, userProfile, onFinishWorkout, onCance
           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-0.5">Session Time</span>
           <div className="flex items-center space-x-3">
             <span className="text-xl font-mono font-bold text-white tracking-tight">{formatSeconds(totalSeconds)}</span>
-            <button onClick={() => setIsPaused(!isPaused)} className={`px-2 py-1 rounded text-[10px] font-bold flex items-center space-x-1 transition-colors ${isPaused ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-zinc-900 border border-zinc-800 text-zinc-400'}`}>
+            <button onClick={() => setIsPaused(!isPaused)} aria-label="Pause Workout" className={`px-2 py-1 rounded text-[10px] font-bold flex items-center space-x-1 transition-colors ${isPaused ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-zinc-900 border border-zinc-800 text-zinc-400'}`}>
               {isPaused ? <Play size={10} className="fill-amber-500" /> : <Pause size={10} />}<span>{isPaused ? 'Paused' : 'Pause'}</span>
             </button>
           </div>
@@ -1375,11 +1380,11 @@ const ActiveWorkout = ({ session, history, userProfile, onFinishWorkout, onCance
       </div>
 
       {exercises.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-[#09090b]">
-          <div className="w-20 h-20 rounded-full bg-[#121214] border border-zinc-800 flex items-center justify-center text-zinc-600 mb-6 shadow-sm"><Dumbbell size={32} /></div>
-          <h3 className="text-xl font-bold text-white mb-2 tracking-tight">Empty Session</h3>
-          <p className="text-sm text-zinc-500 max-w-xs mb-8">Add an exercise to begin tracking.</p>
-          <button onClick={() => setIsAddExModalOpen(true)} className="px-6 py-4 bg-white text-black rounded-full text-sm font-bold active:scale-95 transition-transform flex items-center justify-center space-x-2"><Plus size={18} /><span>Add Exercise</span></button>
+        <div className="flex-1 flex flex-col items-center justify-center p-6 bg-[#09090b]">
+           <button onClick={() => setIsAddExModalOpen(true)} className="w-full max-w-sm bg-[#09090b] border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-indigo-500/10 text-zinc-400 hover:text-white rounded-3xl flex flex-col items-center justify-center transition-all active:scale-95 py-16 shadow-sm">
+             <Plus size={32} className="mb-3" />
+             <span className="text-base font-bold">Add Your First Exercise</span>
+           </button>
         </div>
       ) : (
         <div className="flex-1 flex flex-col justify-between overflow-y-auto bg-[#09090b]">
@@ -1394,11 +1399,11 @@ const ActiveWorkout = ({ session, history, userProfile, onFinishWorkout, onCance
                  const match = MUSCLE_GROUPS.find(g => g.toLowerCase() === currentExercise?.muscle?.toLowerCase());
                  setSwapMuscleGroup(match || 'All');
                  setIsSwapExModalOpen(true);
-              }} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-zinc-900/80 text-zinc-400 hover:text-white flex items-center justify-center transition-colors z-20 border border-zinc-800"><ArrowRightLeft size={14}/></button>
+              }} aria-label="Swap Exercise" className="absolute top-4 right-4 w-8 h-8 rounded-full bg-zinc-900/80 text-zinc-400 hover:text-white flex items-center justify-center transition-colors z-20 border border-zinc-800"><ArrowRightLeft size={14}/></button>
               <ExerciseImage srcPath={currentExercise?.image} alt={currentExercise?.name} muscle={currentExercise?.muscle} className="w-24 h-24 rounded-xl bg-black object-cover mb-4 shadow-md border border-zinc-800" fallbackSize={32} />
               
               <div className="flex items-center justify-between w-full relative z-10">
-                <button disabled={currentExIndex === 0} onClick={() => setCurrentExIndex(i => i - 1)} className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 disabled:opacity-30 text-white flex items-center justify-center transition-colors hover:bg-zinc-800"><ChevronLeft size={20} /></button>
+                <button disabled={currentExIndex === 0} onClick={() => setCurrentExIndex(i => i - 1)} aria-label="Previous Exercise" className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 disabled:opacity-30 text-white flex items-center justify-center transition-colors hover:bg-zinc-800"><ChevronLeft size={20} /></button>
                 <div className="flex-1 px-3">
                   <h3 className="text-lg font-bold text-white leading-tight tracking-tight">{currentExercise.name}</h3>
                   <div className="flex items-center justify-center space-x-2 mt-2">
@@ -1406,7 +1411,7 @@ const ActiveWorkout = ({ session, history, userProfile, onFinishWorkout, onCance
                     <span className="text-xs font-medium text-zinc-400">Target: {currentExercise.targetSets || 3} Sets</span>
                   </div>
                 </div>
-                <button disabled={currentExIndex === exercises.length - 1} onClick={() => setCurrentExIndex(i => i + 1)} className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 disabled:opacity-30 text-white flex items-center justify-center transition-colors hover:bg-zinc-800"><ChevronRight size={20} /></button>
+                <button disabled={currentExIndex === exercises.length - 1} onClick={() => setCurrentExIndex(i => i + 1)} aria-label="Next Exercise" className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 disabled:opacity-30 text-white flex items-center justify-center transition-colors hover:bg-zinc-800"><ChevronRight size={20} /></button>
               </div>
 
               {prevExerciseStats && prevExerciseStats.length > 0 && (
@@ -1527,12 +1532,12 @@ const ActiveWorkout = ({ session, history, userProfile, onFinishWorkout, onCance
             
             <div className="grid grid-cols-1">
               {currentExIndex < exercises.length - 1 ? (
-                <button onClick={() => setCurrentExIndex(i => i + 1)} className="py-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white rounded-xl text-sm font-bold flex items-center justify-center active:scale-95 transition-all">
+                <button onClick={() => { setCurrentExIndex(i => i + 1); setIsResting(false); }} className="py-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white rounded-xl text-sm font-bold flex items-center justify-center active:scale-95 transition-all">
                   <span>Next Exercise</span><ChevronRight size={18} className="ml-1"/>
                 </button>
               ) : (
-                <button onClick={() => setIsAddExModalOpen(true)} className="py-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white rounded-xl text-sm font-bold flex items-center justify-center active:scale-95 transition-all">
-                  <Plus size={16} className="mr-1"/><span>Add Exercise</span>
+                <button onClick={() => setIsAddExModalOpen(true)} className="py-4 w-full bg-[#09090b] border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-indigo-500/10 text-zinc-400 hover:text-white rounded-xl text-sm font-bold flex flex-col items-center justify-center active:scale-95 transition-all">
+                  <Plus size={20} className="mb-1"/><span>Add Another Exercise</span>
                 </button>
               )}
             </div>
@@ -1543,7 +1548,7 @@ const ActiveWorkout = ({ session, history, userProfile, onFinishWorkout, onCance
       <ExerciseSelectorModal isOpen={isSwapExModalOpen} onClose={() => setIsSwapExModalOpen(false)} exerciseDB={exerciseDB} onSelectExercise={handleSwapExerciseFromModal} initialMuscle={swapMuscleGroup}/>
     </div>
   );
-};
+});
 
 const RoutineEditor = ({ routine, onSave, onCancel, exerciseDB }) => {
   const [name, setName] = useState(routine?.name || '');
@@ -1564,7 +1569,7 @@ const RoutineEditor = ({ routine, onSave, onCancel, exerciseDB }) => {
   return (
     <div className="flex flex-col h-full bg-[#09090b] animate-in slide-in-from-right-4 duration-300">
       <div className="flex justify-between items-center p-4 border-b border-zinc-900 bg-[#09090b] shadow-sm z-10 pt-safe">
-        <button onClick={onCancel} className="p-2 -ml-2 rounded-full bg-zinc-900 text-zinc-400 hover:text-white transition-colors active:scale-95 flex items-center justify-center">
+        <button onClick={onCancel} aria-label="Cancel" className="p-2 -ml-2 rounded-full bg-zinc-900 text-zinc-400 hover:text-white transition-colors active:scale-95 flex items-center justify-center">
           <ChevronLeft size={20} />
         </button>
         <h3 className="text-lg font-bold text-white tracking-tight">{routine ? 'Edit Routine' : 'New Routine'}</h3>
@@ -1595,7 +1600,7 @@ const RoutineEditor = ({ routine, onSave, onCancel, exerciseDB }) => {
                   </div>
                 </div>
                 <div className="flex flex-col items-end space-y-2 flex-shrink-0">
-                  <button onClick={() => setExercises(exercises.filter((_, i) => i !== idx))} className="w-8 h-8 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center hover:bg-rose-500/20 transition-colors"><Trash2 size={14} /></button>
+                  <button onClick={() => setExercises(exercises.filter((_, i) => i !== idx))} aria-label="Delete Exercise" className="w-8 h-8 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center hover:bg-rose-500/20 transition-colors"><Trash2 size={14} /></button>
                   <div className="flex items-center space-x-1.5 bg-zinc-900 px-2 py-1.5 rounded-lg border border-zinc-800">
                     <button onClick={() => setExercises(exercises.map((e, i) => i === idx ? { ...e, targetSets: Math.max(1, (e.targetSets || 3) - 1) } : e))} className="text-zinc-400 hover:text-white px-1 font-bold text-sm leading-none transition-colors">-</button>
                     <span className="text-xs font-mono font-bold text-white px-1">{ex.targetSets || 3} <span className="text-[10px] text-zinc-500 font-sans">sets</span></span>
@@ -1624,7 +1629,7 @@ const RoutinePreviewModal = ({ routine, isOpen, onClose }) => {
       <div className="bg-[#121214] border border-zinc-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 max-h-[80vh] flex flex-col">
         <div className="flex justify-between items-start mb-4">
           <div className="pr-4"><h3 className="text-lg font-bold text-white tracking-tight">{routine.name}</h3><p className="text-xs font-medium text-zinc-500 mt-1 uppercase tracking-wider">{routine.exercises.length} Exercises Preview</p></div>
-          <button onClick={onClose} className="p-2 rounded-full bg-zinc-900 text-zinc-400 hover:text-white flex-shrink-0"><X size={18} /></button>
+          <button onClick={onClose} aria-label="Close Preview" className="p-2 rounded-full bg-zinc-900 text-zinc-400 hover:text-white flex-shrink-0"><X size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 pr-1">
           {routine.exercises.map((ex, idx) => (
@@ -1656,14 +1661,16 @@ const LibraryTab = ({ customRoutines, setCustomRoutines, onStartRoutine, exercis
         routine={editingRoutine} exerciseDB={exerciseDB}
         onCancel={() => { setEditingRoutine(null); setIsCreatingNew(false); }}
         onSave={(savedRoutine) => {
-          const existingIdx = customRoutines.findIndex(r => r.id === savedRoutine.id);
-          if (existingIdx >= 0) {
-            const updated = [...customRoutines];
-            updated[existingIdx] = savedRoutine;
-            setCustomRoutines(updated);
-          } else {
-            setCustomRoutines([...customRoutines, savedRoutine]);
-          }
+          setCustomRoutines(prev => {
+            const existingIdx = prev.findIndex(r => r.id === savedRoutine.id);
+            if (existingIdx >= 0) {
+              const updated = [...prev];
+              updated[existingIdx] = savedRoutine;
+              return updated;
+            } else {
+              return [...prev, savedRoutine];
+            }
+          });
           setEditingRoutine(null); setIsCreatingNew(false);
         }}
       />
@@ -1696,13 +1703,13 @@ const LibraryTab = ({ customRoutines, setCustomRoutines, onStartRoutine, exercis
                       <h3 className="text-lg font-bold text-white tracking-tight truncate">{routine.name}</h3>
                       <p className="text-xs font-medium text-zinc-500 mt-1.5">{routine.exercises.length} exercises</p>
                     </div>
-                    <button onClick={() => onStartRoutine(routine)} className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-lg flex-shrink-0 active:scale-95" title="Start">
+                    <button onClick={() => onStartRoutine(routine)} aria-label="Start Routine" className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-lg flex-shrink-0 active:scale-95" title="Start">
                       <Play size={20} className="fill-black translate-x-0.5" />
                     </button>
                   </div>
                   <div className="flex justify-between items-center pt-3 border-t border-zinc-800/80">
                     <button onClick={() => setEditingRoutine(routine)} className="px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-xs font-bold flex-1 mr-2 flex justify-center items-center active:scale-95"><Edit2 size={14} className="mr-1.5"/> Edit</button>
-                    <button onClick={() => setDeleteConfirm(routine.id)} className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center justify-center active:scale-95"><Trash2 size={16}/></button>
+                    <button onClick={() => setDeleteConfirm(routine.id)} aria-label="Delete Routine" className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center justify-center active:scale-95"><Trash2 size={16}/></button>
                   </div>
                 </div>
             ))}
@@ -1726,12 +1733,12 @@ const LibraryTab = ({ customRoutines, setCustomRoutines, onStartRoutine, exercis
                       </div>
                       <p className="text-xs font-medium text-zinc-400 mt-1 leading-relaxed truncate">{routine.desc}</p>
                     </div>
-                    <button onClick={() => onStartRoutine(routine)} className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-lg flex-shrink-0 active:scale-95" title="Start Workout">
+                    <button onClick={() => onStartRoutine(routine)} aria-label="Start Standard Routine" className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-lg flex-shrink-0 active:scale-95" title="Start Workout">
                       <Play size={20} className="fill-black translate-x-0.5" />
                     </button>
                   </div>
                   <div className="pt-3 border-t border-zinc-800/80">
-                    <button onClick={() => setEditingRoutine({ id: `copy_${Date.now()}`, name: `${routine.name.split(' (')[0]} (Copy)`, exercises: [...routine.exercises] })} className="w-full py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-xs font-bold flex justify-center items-center active:scale-95"><Edit2 size={14} className="mr-1.5"/> Edit</button>
+                    <button onClick={() => setEditingRoutine({ id: `copy_${Date.now()}`, name: `${routine.name.split(' (')[0]} (Copy)`, exercises: [...routine.exercises] })} className="w-full py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-xs font-bold flex justify-center items-center active:scale-95"><Edit2 size={14} className="mr-1.5"/> Clone</button>
                   </div>
                 </div>
               ))}
@@ -1741,7 +1748,7 @@ const LibraryTab = ({ customRoutines, setCustomRoutines, onStartRoutine, exercis
       </div>
       
       <RoutinePreviewModal routine={previewRoutine} isOpen={!!previewRoutine} onClose={() => setPreviewRoutine(null)} />
-      <DeleteConfirmModal isOpen={!!deleteConfirm} onCancel={() => setDeleteConfirm(null)} onConfirm={() => { setCustomRoutines(customRoutines.filter(r => r.id !== deleteConfirm)); setDeleteConfirm(null); }} />
+      <DeleteConfirmModal isOpen={!!deleteConfirm} onCancel={() => setDeleteConfirm(null)} onConfirm={() => { setCustomRoutines(prev => prev.filter(r => r.id !== deleteConfirm)); setDeleteConfirm(null); }} />
     </div>
   );
 };
@@ -1759,7 +1766,7 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [isWipeDataModalOpen, setIsWipeDataModalOpen] = useState(false);
-  const [isDummyLoadedModalOpen, setIsDummyLoadedModalOpen] = useState(false);
+  const [modalMessage, setModalMessage] = useState(null);
   
   const [selectedDayData, setSelectedDayData] = useState(null);
   const [goalPendingSync, setGoalPendingSync] = useState(null);
@@ -1792,6 +1799,32 @@ export default function App() {
       .then(data => { if (Array.isArray(data) && data.length > 0) setExerciseDB(data); })
       .catch(() => {});
   }, []);
+
+  // Swipe Navigation Logic
+  const [touchStart, setTouchStart] = useState({ x: null, y: null });
+  const [touchEnd, setTouchEnd] = useState({ x: null, y: null });
+  const minSwipeDistance = 50;
+
+  const onTouchStart = (e) => {
+    setTouchEnd({ x: null, y: null });
+    setTouchStart({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
+  };
+  const onTouchMove = (e) => setTouchEnd({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
+  const onTouchEndEvent = () => {
+    if (!touchStart.x || !touchEnd.x) return;
+    const distanceX = touchStart.x - touchEnd.x;
+    const distanceY = touchStart.y - touchEnd.y;
+    
+    if (Math.abs(distanceX) > Math.abs(distanceY) && Math.abs(distanceX) > minSwipeDistance) {
+      const isLeftSwipe = distanceX > minSwipeDistance;
+      const isRightSwipe = distanceX < -minSwipeDistance;
+      const tabs = ['home', 'library', 'progress'];
+      const currentIndex = tabs.indexOf(activeTab);
+      
+      if (isLeftSwipe && currentIndex < tabs.length - 1) setActiveTab(tabs[currentIndex + 1]);
+      if (isRightSwipe && currentIndex > 0) setActiveTab(tabs[currentIndex - 1]);
+    }
+  };
 
   const handleStartEmpty = () => setActiveSession({ routineName: 'Empty Workout', isCustomTemplate: false, exercises: [] });
   const handleStartRoutine = (routine) => setActiveSession({ routineName: routine.name, isCustomTemplate: !routine.id.startsWith('std-'), exercises: routine.exercises.map(e => ({ ...e, sets: [] })) });
@@ -1846,7 +1879,10 @@ export default function App() {
         if(data.userProfile) setUserProfile(data.userProfile);
         if(data.weeklyGoal !== undefined) setWeeklyGoal(data.weeklyGoal);
         setIsOptionsOpen(false);
-      } catch(err) {}
+        setModalMessage({ title: "Import Successful", message: "Your data has been securely restored.", isSuccess: true });
+      } catch(err) {
+        setModalMessage({ title: "Import Failed", message: "Invalid file format. Please upload a valid FitTrack JSON backup.", isSuccess: false });
+      }
     };
     reader.readAsText(file);
     e.target.value = null;
@@ -1898,7 +1934,7 @@ export default function App() {
     setScheduledRoutines({ 0: { id: 'std-push', name: 'Push (Hypertrophy Focus)' }, 2: { id: 'std-legs', name: 'Legs (Quad & Ham Balance)' }, 4: { id: 'std-pull', name: 'Pull (Width & Thickness)' } });
     setWeeklyGoal(4);
     setIsOptionsOpen(false);
-    setIsDummyLoadedModalOpen(true);
+    setModalMessage({ title: "Data Loaded!", message: "60 sessions of dummy data have been injected. Check your Progress tab!", isSuccess: true });
   };
 
   const executeWipeData = () => {
@@ -1918,33 +1954,10 @@ export default function App() {
     monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
     monday.setHours(0,0,0,0);
     const thisWeekHistory = history.filter(h => new Date(h.date) >= monday);
-    const uniqueDays = new Set(thisWeekHistory.map(h => getLocalYYYYMMDD(new Date(h.date))));
+    const uniqueDays = new Set(thisWeekHistory.map(h => getLocalYYYYMMDD(h.date)));
     return uniqueDays.size;
   }, [history]);
 
-  // Swipe Navigation Logic
-  const [touchStart, setTouchStart] = useState(null);
-  const [touchEnd, setTouchEnd] = useState(null);
-  const minSwipeDistance = 50;
-
-  const onTouchStart = (e) => {
-    setTouchEnd(null);
-    setTouchStart(e.targetTouches[0].clientX);
-  };
-  const onTouchMove = (e) => setTouchEnd(e.targetTouches[0].clientX);
-  const onTouchEndEvent = () => {
-    if (!touchStart || !touchEnd) return;
-    const distance = touchStart - touchEnd;
-    const isLeftSwipe = distance > minSwipeDistance;
-    const isRightSwipe = distance < -minSwipeDistance;
-    const tabs = ['home', 'library', 'progress'];
-    const currentIndex = tabs.indexOf(activeTab);
-    
-    if (isLeftSwipe && currentIndex < tabs.length - 1) setActiveTab(tabs[currentIndex + 1]);
-    if (isRightSwipe && currentIndex > 0) setActiveTab(tabs[currentIndex - 1]);
-  };
-
-  // Streak logic factoring in rest days
   const currentStreak = useMemo(() => {
     const datesWithWorkouts = new Set(history.map(h => getLocalYYYYMMDD(new Date(h.date))));
     const restDaysOfWeek = Object.keys(scheduledRoutines).filter(k => scheduledRoutines[k].isRest).map(Number);
@@ -2005,96 +2018,110 @@ export default function App() {
           <ActiveWorkout session={activeSession} history={history} userProfile={userProfile} exerciseDB={exerciseDB} onCancelWorkout={() => setActiveSession(null)} onFinishWorkout={handleFinishWorkout} />
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden pb-[70px]" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEndEvent}>
-            {activeTab === 'home' && (
-              <div className="flex-1 flex flex-col overflow-y-auto p-4 animate-in fade-in duration-300">
-                <div className="flex items-center justify-between pt-2 mb-4">
-                  <div>
-                    <h1 className="text-3xl font-black text-white tracking-tighter flex items-center space-x-2"><span>FitTrack</span><span className="text-indigo-500">.PRO</span></h1>
-                    <p className="text-xs font-medium text-zinc-400 mt-0.5">Track overload & rest efficiently</p>
-                  </div>
-                  <div className="relative z-50">
-                    <button onClick={() => setIsOptionsOpen(!isOptionsOpen)} className="w-12 h-12 rounded-full bg-[#121214] border border-zinc-800 text-white flex items-center justify-center shadow-sm active:scale-95 transition-colors"><Menu size={20} /></button>
-                    {isOptionsOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setIsOptionsOpen(false)} />
-                        <div className="absolute right-0 top-14 w-56 bg-[#121214] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50">
-                          <button onClick={() => { setIsProfileModalOpen(true); setIsOptionsOpen(false); }} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><User size={16} className="mr-3 text-sky-400"/> Edit Profile</button>
-                          <div className="h-[1px] bg-zinc-800"></div>
-                          <button onClick={() => { setIsTutorialOpen(true); setIsOptionsOpen(false); }} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><Info size={16} className="mr-3 text-indigo-400"/> Replay Tutorial</button>
-                          <div className="h-[1px] bg-zinc-800"></div>
-                          <button onClick={() => loadDummyData()} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><DatabaseZap size={16} className="mr-3 text-emerald-400"/> Load Dummy Data</button>
-                          <button onClick={() => handleExportData()} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><Download size={16} className="mr-3 text-sky-400"/> Export JSON Data</button>
-                          <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportData} className="hidden" />
-                          <button onClick={() => fileInputRef.current?.click()} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><Layers size={16} className="mr-3 text-amber-400"/> Import JSON Data</button>
-                          <div className="h-[1px] bg-zinc-800"></div>
-                          <button onClick={() => setIsWipeDataModalOpen(true)} className="w-full text-left px-4 py-3.5 text-sm font-bold text-rose-500 hover:bg-zinc-900 flex items-center"><Trash2 size={16} className="mr-3"/> Wipe All Data</button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mb-4 flex justify-between items-center px-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xl drop-shadow-md">🔥</span>
-                    <div>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase block">Current Streak</span>
-                      <span className="text-sm font-black text-white">{currentStreak} Day{currentStreak !== 1 && 's'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mb-6">
-                   <WeeklyTracker history={history} onSelectDay={(day) => setSelectedDayData(day)} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 mb-6">
-                  <div className="bg-[#121214] border border-zinc-800/80 rounded-3xl p-4 shadow-sm flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center space-x-1.5 mb-2 text-indigo-400">
-                        <CalendarCheck size={14} />
-                        <span className="text-[10px] font-bold uppercase tracking-wider">Today</span>
+             <div className="flex-1 overflow-y-auto relative">
+                
+                {/* CONDITIONAL RENDERING FOR FLAWLESS MODAL PLACEMENT */}
+                {activeTab === 'home' && (
+                  <div className="absolute inset-0 animate-in slide-in-from-left-4 fade-in duration-300 overflow-y-auto p-4">
+                    <div className="flex items-center justify-between pt-2 mb-4">
+                      <div>
+                        <h1 className="text-3xl font-black text-white tracking-tighter flex items-center space-x-2"><span>FitTrack</span><span className="text-indigo-500">.PRO</span></h1>
+                        <p className="text-xs font-medium text-zinc-400 mt-0.5">Track overload & rest efficiently</p>
                       </div>
-                      <h3 className="text-base font-bold text-white tracking-tight leading-tight">{todayProgram ? todayProgram.name : 'Empty Day'}</h3>
-                    </div>
-                    {todayProgram && !todayProgram.isRest ? (
-                      <button onClick={() => {
-                        const rToStart = customRoutines.find(r => r.id === todayProgram.id) || STANDARD_ROUTINES.find(r => r.id === todayProgram.id);
-                        if (rToStart) handleStartRoutine(rToStart);
-                      }} className="mt-4 w-full py-2.5 bg-white text-black rounded-xl text-xs font-bold active:scale-95 transition-transform shadow-lg">Start</button>
-                    ) : (
-                      <button onClick={() => setIsPlannerOpen(true)} className="mt-4 w-full py-2.5 bg-zinc-900 border border-zinc-800 text-white rounded-xl text-xs font-bold active:scale-95 transition-transform">Planner</button>
-                    )}
-                  </div>
-                  
-                  <div className="bg-[#121214] border border-zinc-800/80 rounded-3xl p-4 shadow-sm flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center space-x-1.5 mb-2 text-emerald-400">
-                        <Trophy size={14} />
-                        <span className="text-[10px] font-bold uppercase tracking-wider">Goal</span>
+                      <div className="relative z-50">
+                        <button onClick={() => setIsOptionsOpen(!isOptionsOpen)} aria-label="Menu" className="w-12 h-12 rounded-full bg-[#121214] border border-zinc-800 text-white flex items-center justify-center shadow-sm active:scale-95 transition-colors"><Menu size={20} /></button>
+                        {isOptionsOpen && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsOptionsOpen(false)} />
+                            <div className="absolute right-0 top-14 w-56 bg-[#121214] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50">
+                              <button onClick={() => { setIsProfileModalOpen(true); setIsOptionsOpen(false); }} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><User size={16} className="mr-3 text-sky-400"/> Edit Profile</button>
+                              <div className="h-[1px] bg-zinc-800"></div>
+                              <button onClick={() => { setIsTutorialOpen(true); setIsOptionsOpen(false); }} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><Info size={16} className="mr-3 text-indigo-400"/> Replay Tutorial</button>
+                              <div className="h-[1px] bg-zinc-800"></div>
+                              <button onClick={() => loadDummyData()} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><DatabaseZap size={16} className="mr-3 text-emerald-400"/> Load Dummy Data</button>
+                              <button onClick={() => handleExportData()} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><Download size={16} className="mr-3 text-sky-400"/> Export JSON Data</button>
+                              <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportData} className="hidden" />
+                              <button onClick={() => fileInputRef.current?.click()} className="w-full text-left px-4 py-3.5 text-sm font-bold text-white hover:bg-zinc-900 flex items-center"><Layers size={16} className="mr-3 text-amber-400"/> Import JSON Data</button>
+                              <div className="h-[1px] bg-zinc-800"></div>
+                              <button onClick={() => setIsWipeDataModalOpen(true)} className="w-full text-left px-4 py-3.5 text-sm font-bold text-rose-500 hover:bg-zinc-900 flex items-center"><Trash2 size={16} className="mr-3"/> Wipe All Data</button>
+                            </div>
+                          </>
+                        )}
                       </div>
-                      {weeklyGoal > 0 ? (
+                    </div>
+
+                    <div className="mb-4 flex justify-between items-center px-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xl drop-shadow-md">🔥</span>
                         <div>
-                           <div className="flex items-end space-x-1 mb-1"><span className="text-2xl font-black text-white leading-none">{workoutsThisWeek}</span><span className="text-sm font-bold text-zinc-500 mb-0.5">/ {weeklyGoal}</span></div>
-                           <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${Math.min(100, (workoutsThisWeek/weeklyGoal)*100)}%`}}></div></div>
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase block">Current Streak</span>
+                          <span className="text-sm font-black text-white">{currentStreak} Day{currentStreak !== 1 && 's'}</span>
                         </div>
-                      ) : (
-                        <h3 className="text-sm font-bold text-zinc-500 tracking-tight leading-tight mt-1">No goal set.</h3>
-                      )}
+                      </div>
                     </div>
-                    <button onClick={() => setIsGoalModalOpen(true)} className="mt-4 w-full py-2.5 bg-zinc-900 border border-zinc-800 text-white rounded-xl text-xs font-bold active:scale-95 transition-transform">{weeklyGoal === 0 ? 'Set Goal' : 'Edit Goal'}</button>
-                  </div>
-                </div>
 
-                <div className="flex-1 flex flex-col justify-end pb-4">
-                  <button onClick={() => setIsStartModalOpen(true)} className="w-full bg-white text-black py-5 rounded-2xl shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center relative overflow-hidden">
-                    <span className="text-xl font-black tracking-tight z-10 uppercase">Start Workout</span>
-                  </button>
-                </div>
-              </div>
-            )}
-            {activeTab === 'library' && <LibraryTab customRoutines={customRoutines} setCustomRoutines={setCustomRoutines} onStartRoutine={handleStartRoutine} exerciseDB={exerciseDB} />}
-            {activeTab === 'progress' && <ProgressMainTab history={history} userProfile={userProfile} weeklyGoal={weeklyGoal} scheduledRoutines={scheduledRoutines} onDeleteSession={(id) => setHistory(history.filter(h => h.id !== id))} onSaveAsRoutine={setSaveRoutinePrompt} />}
+                    <div className="mb-6">
+                       <WeeklyTracker history={history} onSelectDay={(day) => setSelectedDayData(day)} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-6">
+                      <div className="bg-[#121214] border border-zinc-800/80 rounded-3xl p-4 shadow-sm flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center space-x-1.5 mb-2 text-indigo-400">
+                            <CalendarCheck size={14} />
+                            <span className="text-[10px] font-bold uppercase tracking-wider">Today</span>
+                          </div>
+                          <h3 className="text-base font-bold text-white tracking-tight leading-tight">{todayProgram ? todayProgram.name : 'Empty Day'}</h3>
+                        </div>
+                        {todayProgram && !todayProgram.isRest ? (
+                          <button onClick={() => {
+                            const rToStart = customRoutines.find(r => r.id === todayProgram.id) || STANDARD_ROUTINES.find(r => r.id === todayProgram.id);
+                            if (rToStart) handleStartRoutine(rToStart);
+                          }} className="mt-4 w-full py-2.5 bg-white text-black rounded-xl text-xs font-bold active:scale-95 transition-transform shadow-lg">Start</button>
+                        ) : (
+                          <button onClick={() => setIsPlannerOpen(true)} className="mt-4 w-full py-2.5 bg-zinc-900 border border-zinc-800 text-white rounded-xl text-xs font-bold active:scale-95 transition-transform">Planner</button>
+                        )}
+                      </div>
+                      
+                      <div className="bg-[#121214] border border-zinc-800/80 rounded-3xl p-4 shadow-sm flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center space-x-1.5 mb-2 text-emerald-400">
+                            <Trophy size={14} />
+                            <span className="text-[10px] font-bold uppercase tracking-wider">Goal</span>
+                          </div>
+                          {weeklyGoal > 0 ? (
+                            <div>
+                               <div className="flex items-end space-x-1 mb-1"><span className="text-2xl font-black text-white leading-none">{workoutsThisWeek}</span><span className="text-sm font-bold text-zinc-500 mb-0.5">/ {weeklyGoal}</span></div>
+                               <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${Math.min(100, (workoutsThisWeek/weeklyGoal)*100)}%`}}></div></div>
+                            </div>
+                          ) : (
+                            <h3 className="text-sm font-bold text-zinc-500 tracking-tight leading-tight mt-1">No goal set.</h3>
+                          )}
+                        </div>
+                        <button onClick={() => setIsGoalModalOpen(true)} className="mt-4 w-full py-2.5 bg-zinc-900 border border-zinc-800 text-white rounded-xl text-xs font-bold active:scale-95 transition-transform">{weeklyGoal === 0 ? 'Set Goal' : 'Edit Goal'}</button>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col justify-end pb-4">
+                      <button onClick={() => setIsStartModalOpen(true)} className="w-full bg-white text-black py-5 rounded-2xl shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center relative overflow-hidden">
+                        <span className="text-xl font-black tracking-tight z-10 uppercase">Start Workout</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'library' && (
+                   <div className="absolute inset-0 animate-in fade-in zoom-in-95 duration-300 overflow-y-auto">
+                      <LibraryTab customRoutines={customRoutines} setCustomRoutines={setCustomRoutines} onStartRoutine={handleStartRoutine} exerciseDB={exerciseDB} />
+                   </div>
+                )}
+
+                {activeTab === 'progress' && (
+                   <div className="absolute inset-0 animate-in slide-in-from-right-4 fade-in duration-300 overflow-y-auto">
+                      <ProgressMainTab history={history} userProfile={userProfile} weeklyGoal={weeklyGoal} scheduledRoutines={scheduledRoutines} onDeleteSession={(id) => setHistory(history.filter(h => h.id !== id))} onSaveAsRoutine={setSaveRoutinePrompt} />
+                   </div>
+                )}
+             </div>
           </div>
         )}
 
@@ -2122,7 +2149,7 @@ export default function App() {
         <SyncGoalModal goalPendingSync={goalPendingSync} onConfirm={(days) => { setWeeklyGoal(days); setGoalPendingSync(null); }} onSkip={() => setGoalPendingSync(null)} />
         
         <WipeDataConfirmModal isOpen={isWipeDataModalOpen} onConfirm={executeWipeData} onCancel={() => setIsWipeDataModalOpen(false)} />
-        <MessageModal isOpen={isDummyLoadedModalOpen} title="Data Loaded!" message="60 sessions of dummy data have been injected. Check your Progress tab!" onClose={() => setIsDummyLoadedModalOpen(false)} isSuccess={true} />
+        <MessageModal isOpen={!!modalMessage} title={modalMessage?.title} message={modalMessage?.message} isSuccess={modalMessage?.isSuccess} onClose={() => setModalMessage(null)} />
       </div>
     </div>
   );
